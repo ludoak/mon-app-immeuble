@@ -25,6 +25,12 @@ def sauvegarder_locataire(logement, nom):
     conn.update(worksheet="Locataires", data=df)
     st.cache_data.clear()
 
+def supprimer_locataire(logement):
+    df = charger_donnees()
+    df = df[df['Logement'] != logement]
+    conn.update(worksheet="Locataires", data=df)
+    st.cache_data.clear()
+
 # --- CHARGEMENT DES DONNÉES ---
 df_base = charger_donnees()
 
@@ -33,53 +39,63 @@ st.title("🏢 Rapport d'Intervention ImmoCheck")
 # --- BARRE LATÉRALE : GESTION DES LOCATAIRES ---
 with st.sidebar:
     st.header("👥 Base Locataires")
-    st.info("Utilisez cette section pour enregistrer un nouveau locataire dans la base Google.")
-    res_a = st.selectbox("Résidence", ["Canterane", "La Dussaude"], key="res_sidebar")
     
-    if res_a == "Canterane":
-        bat_a = st.radio("Bâtiment", ["A", "B"], horizontal=True)
-        app_a = st.text_input("N° Appartement")
-        cle_loc = f"Canterane - Bat {bat_a} - Appt {app_a}"
-    else:
-        app_a = st.number_input("N° Appartement", 1, 95)
-        cle_loc = f"La Dussaude - Appt {app_a}"
+    tab_ajout, tab_suppr = st.tabs(["➕ Ajouter", "🗑️ Supprimer"])
     
-    nom_a = st.text_input("Nom du locataire")
-    if st.button("💾 Enregistrer le locataire"):
-        sauvegarder_locataire(cle_loc, nom_a)
-        st.success("Enregistré dans Google Sheets !")
-        st.rerun()
+    with tab_ajout:
+        res_a = st.selectbox("Résidence", ["Canterane", "La Dussaude"], key="res_add")
+        if res_a == "Canterane":
+            bat_a = st.radio("Bâtiment", ["A", "B"], horizontal=True, key="bat_add")
+            app_a = st.text_input("N° Appt", key="app_add")
+            cle_loc = f"Canterane - Bat {bat_a} - Appt {app_a}"
+        else:
+            app_a = st.number_input("N° Appt", 1, 95, key="app_add_duss")
+            cle_loc = f"La Dussaude - Appt {app_a}"
+        
+        nom_a = st.text_input("Nom du locataire", key="nom_add")
+        if st.button("💾 Enregistrer"):
+            sauvegarder_locataire(cle_loc, nom_a)
+            st.success("Enregistré !")
+            st.rerun()
+
+    with tab_suppr:
+        if not df_base.empty:
+            log_a_supprimer = st.selectbox("Choisir le logement à vider", df_base['Logement'].tolist())
+            if st.button("❌ Confirmer suppression"):
+                supprimer_locataire(log_a_supprimer)
+                st.warning(f"Locataire de {log_a_supprimer} supprimé")
+                st.rerun()
+        else:
+            st.write("La base est vide.")
 
 # --- FORMULAIRE PRINCIPAL ---
 st.subheader("📝 Nouveau Constat")
 
-with st.form("rapport_form"):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        residence = st.selectbox("📍 Résidence", ["Canterane", "La Dussaude"])
-        if residence == "Canterane":
-            batiment = st.radio("Bâtiment", ["A", "B"], horizontal=True)
-            appartement = st.text_input("N° Appt")
-            id_logement = f"Canterane - Bat {batiment} - Appt {appartement}"
-        else:
-            appartement = st.number_input("N° Appt", 1, 95)
-            id_logement = f"La Dussaude - Appt {appartement}"
+# Sélection du logement HORS du formulaire pour la recherche instantanée
+col1, col2 = st.columns(2)
+with col1:
+    res_search = st.selectbox("📍 Résidence", ["Canterane", "La Dussaude"], key="res_s")
+    if res_search == "Canterane":
+        bat_s = st.radio("Bâtiment", ["A", "B"], horizontal=True, key="bat_s")
+        app_s = st.text_input("N° Appt", key="app_s")
+        id_logement = f"Canterane - Bat {bat_s} - Appt {app_s}"
+    else:
+        app_s = st.number_input("N° Appt", 1, 95, key="app_s_duss")
+        id_logement = f"La Dussaude - Appt {app_s}"
 
-    with col2:
-        date_visite = st.date_input("📅 Date d'intervention", format="DD/MM/YYYY")
-        urgence = st.select_slider("🚦 Degré d'urgence", options=["Faible", "Moyenne", "Haute"])
+# RECHERCHE DU NOM (Instantane)
+nom_locataire = ""
+if not df_base.empty and id_logement in df_base['Logement'].values:
+    nom_locataire = df_base.loc[df_base['Logement'] == id_logement, 'Nom'].values[0]
 
-    st.divider()
+with col2:
+    date_visite = st.date_input("📅 Date", format="DD/MM/YYYY")
+    st.text_input("👤 Locataire identifié", value=nom_locataire, disabled=True)
 
-    # --- RECHERCHE AUTOMATIQUE DU NOM ---
-    nom_locataire = ""
-    if not df_base.empty and id_logement in df_base['Logement'].values:
-        nom_locataire = df_base.loc[df_base['Logement'] == id_logement, 'Nom'].values[0]
+# Début du formulaire pour le reste des infos
+with st.form("rapport_technique"):
+    urgence = st.select_slider("🚦 Urgence", options=["Faible", "Moyenne", "Haute"])
     
-    st.text_input("👤 Locataire (auto)", value=nom_locataire, disabled=True)
-    
-    # --- PROBLÈMES TECHNIQUES ---
     type_probleme = st.selectbox("🛠️ Type de problème", [
         "Plomberie (Fuite, robinet, chasse d'eau)",
         "Chauffage / Eau Chaude",
@@ -87,29 +103,23 @@ with st.form("rapport_form"):
         "VMC / Ventilation",
         "Serrurerie / Porte",
         "Infiltration / Humidité",
-        "Autre (Préciser dans les notes)"
+        "Autre"
     ])
     
-    observations = st.text_area("🗒️ Observations détaillées", placeholder="Décrivez le problème constaté...")
+    observations = st.text_area("🗒️ Observations")
 
     soumettre = st.form_submit_button("🚀 GÉNÉRER LE RAPPORT")
 
-# --- AFFICHAGE DU RÉSULTAT ---
+# --- AFFICHAGE DU MESSAGE ---
 if soumettre:
-    st.success("Rapport généré ! Copiez le texte ci-dessous :")
-    
     msg = f"""*RAPPORT D'INTERVENTION* 🏢
 ----------------------------------
-📍 *Lieu :* {id_logement} ({residence})
+📍 *Lieu :* {id_logement}
 👤 *Locataire :* {nom_locataire if nom_locataire else "Non renseigné"}
 📅 *Date :* {date_visite.strftime('%d/%m/%Y')}
 🚦 *Urgence :* {urgence}
 
-🛠️ *Type de problème :* {type_probleme}
+🛠️ *Type :* {type_probleme}
 📝 *Constat :* {observations}
-
-----------------------------------
-_Généré par ImmoCheck Pro_"""
-    
+----------------------------------"""
     st.code(msg, language="text")
-    st.info("💡 Vous pouvez maintenant copier ce texte et l'envoyer par SMS ou Email.")
