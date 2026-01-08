@@ -43,3 +43,4 @@ with st.container(border=True):
         date_j = date.today().strftime('%d/%m/%Y')
         rapport = f"RAPPORT DU {date_j}\nLIEU : {res} Apt {n}\nLOCATAIRE : {nom}\n\nCONSTAT :\n{notes}"
         st.code(rapport)
+
