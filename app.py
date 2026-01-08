@@ -36,33 +36,52 @@ st.title("🏢 Rapport d'Intervention Pro")
 with st.sidebar:
     st.header("👥 Base Locataires")
     with st.expander("➕ Ajouter un locataire"):
-        new_res = st.selectbox("Résidence", ["Canterane", "La Dussaude"])
-        new_app = st.text_input("N° Appt")
-        new_nom = st.text_input("Nom")
+        new_res = st.selectbox("Résidence", ["Canterane", "La Dussaude"], key="add_res")
+        
+        # Logique Bâtiment pour l'ajout
+        new_bat = ""
+        if new_res == "Canterane":
+            new_bat = st.radio("Bâtiment", ["A", "B"], horizontal=True, key="add_bat")
+            
+        new_app = st.text_input("N° Appt", key="add_app")
+        new_nom = st.text_input("Nom", key="add_nom")
+        
         if st.button("Enregistrer"):
-            # Ici on simule l'ajout pour l'affichage immédiat
-            new_row = pd.DataFrame({"Logement": [f"{new_res} {new_app}"], "Nom": [new_nom]})
+            log_id = f"{new_res} {new_bat} {new_app}".replace("  ", " ").strip()
+            new_row = pd.DataFrame({"Logement": [log_id], "Nom": [new_nom]})
             df_base = pd.concat([df_base, new_row], ignore_index=True)
-            st.success("Ajouté (pensez à l'écrire sur votre Google Sheet)")
+            st.success(f"Ajouté : {log_id}")
 
 # Formulaire Principal
 with st.container(border=True):
     col1, col2 = st.columns(2)
     with col1:
-        res = st.selectbox("📍 Résidence", ["Canterane", "La Dussaude"])
-        n = st.text_input("N° Appartement")
+        res = st.selectbox("📍 Résidence", ["Canterane", "La Dussaude"], key="main_res")
+        
+        # --- AJOUT DU BATIMENT SI CANTERANE ---
+        bat = ""
+        if res == "Canterane":
+            bat = st.radio("Bâtiment", ["A", "B"], horizontal=True, key="main_bat")
+            
+        n = st.text_input("N° Appartement", key="main_n")
+    
     with col2:
-        # On essaie de trouver le nom automatiquement
-        id_recherche = f"{res} {n}"
+        # On essaie de trouver le nom avec la logique Résidence + Bâtiment + Appt
+        id_recherche = f"{res} {bat} {n}".replace("  ", " ").strip()
         nom_trouve = ""
         if not df_base.empty:
+            # On cherche une correspondance dans la base
             match = df_base[df_base['Logement'].astype(str).str.contains(n, na=False)]
-            if not match.empty: nom_trouve = match.iloc[0]['Nom']
+            if res == "Canterane":
+                match = match[match['Logement'].astype(str).str.contains(bat, na=False)]
+            
+            if not match.empty: 
+                nom_trouve = match.iloc[0]['Nom']
+        
         nom = st.text_input("👤 Nom du Locataire", value=nom_trouve)
 
     st.divider()
     
-    # Choix du type d'intervention
     type_inter = st.selectbox("🛠️ Type d'intervention", 
                                ["Plomberie", "VMC", "Serrurerie", "Électricité", "Chauffage", "Autre"])
     
@@ -81,7 +100,12 @@ with st.container(border=True):
 
     if st.button("GÉNÉRER LE RAPPORT FINAL"):
         date_j = date.today().strftime('%d/%m/%Y')
-        rapport = f"🏢 RAPPORT D'INTERVENTION\n📅 Date : {date_j}\n📍 Lieu : {res} - Appt {n}\n👤 Locataire : {nom}\n🛠️ Type : {type_inter}\n\nCONSTAT :\n{notes}"
+        # On formate joliment le lieu
+        lieu_affichage = f"{res}"
+        if bat: lieu_affichage += f" - Bât {bat}"
+        lieu_affichage += f" - Appt {n}"
+        
+        rapport = f"🏢 RAPPORT D'INTERVENTION\n📅 Date : {date_j}\n📍 Lieu : {lieu_affichage}\n👤 Locataire : {nom}\n🛠️ Type : {type_inter}\n\nCONSTAT :\n{notes}"
         st.divider()
         st.subheader("✅ Texte à copier :")
         st.code(rapport)
