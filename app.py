@@ -1,134 +1,100 @@
 import streamlit as st
 from datetime import date
-import json
-import os
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 
-# Configuration pour mobile et ordinateur
-st.set_page_config(page_title="ImmoCheck Pro", page_icon="🏢", layout="wide")
+# Configuration
+st.set_page_config(page_title="ImmoCheck Pro GS", page_icon="🏢", layout="wide")
 
-# --- 1. GESTION DE LA MÉMOIRE (FICHIER JSON) ---
-FILE_LOCATAIRES = "liste_locataires.json"
+# --- CONNEXION GOOGLE SHEETS ---
+# Note : Il faudra configurer l'URL dans les secrets de Streamlit Cloud
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-def charger_locataires():
-    if os.path.exists(FILE_LOCATAIRES):
-        try:
-            with open(FILE_LOCATAIRES, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+def charger_donnees():
+    try:
+        return conn.read(worksheet="Locataires", ttl=0)
+    except:
+        return pd.DataFrame(columns=["Logement", "Nom"])
 
-def sauvegarder_tous_locataires(dictionnaire):
-    with open(FILE_LOCATAIRES, "w", encoding="utf-8") as f:
-        json.dump(dictionnaire, f, indent=4, ensure_ascii=False)
-
-# Charger les données dans la session
-if 'locataires' not in st.session_state:
-    st.session_state['locataires'] = charger_locataires()
-
-# --- 2. BARRE LATÉRALE (MENU MOBILE) ---
-# Sur téléphone, clique sur la petite flèche ">" en haut à gauche
-with st.sidebar:
-    st.header("👥 Gestion Locataires")
-    tab_ajout, tab_suppr = st.tabs(["➕ Ajouter", "🗑️ Supprimer"])
+def sauvegarder_locataire(logement, nom):
+    df = charger_donnees()
+    # Si le logement existe déjà, on met à jour, sinon on ajoute
+    if logement in df['Logement'].values:
+        df.loc[df['Logement'] == logement, 'Nom'] = nom
+    else:
+        new_row = pd.DataFrame({"Logement": [logement], "Nom": [nom]})
+        df = pd.concat([df, new_row], ignore_index=True)
     
-    with tab_ajout:
-        res_add = st.selectbox("Résidence", ["Canterane", "La Dussaude"], key="res_sidebar")
-        
-        if res_add == "Canterane":
-            bat_add = st.radio("Bâtiment", ["Bâtiment A", "Bâtiment B"], horizontal=True)
-            appt_add = st.text_input("N° Appartement", key="app_c_side")
-            cle_loc = f"Canterane - {bat_add} - Appt {appt_add}"
+    conn.update(worksheet="Locataires", data=df)
+    st.cache_data.clear()
+
+def supprimer_locataire(logement):
+    df = charger_donnees()
+    df = df[df['Logement'] != logement]
+    conn.update(worksheet="Locataires", data=df)
+    st.cache_data.clear()
+
+# --- INTERFACE ---
+st.title("🏢 Gestion Immobilière (Cloud)")
+
+# Menu latéral
+with st.sidebar:
+    st.header("👥 Base Locataires")
+    tab_a, tab_s = st.tabs(["➕ Ajouter", "🗑️ Supprimer"])
+    
+    with tab_a:
+        res_a = st.selectbox("Résidence", ["Canterane", "La Dussaude"], key="ra")
+        if res_a == "Canterane":
+            bat_a = st.radio("Bâtiment", ["A", "B"], horizontal=True)
+            app_a = st.text_input("N° Appt", key="aa")
+            cle = f"Canterane - Bat {bat_a} - Appt {app_a}"
         else:
-            appt_add = st.number_input("N° Appartement (1-95)", 1, 95, key="app_d_side")
-            cle_loc = f"La Dussaude - Appt {appt_add}"
+            app_a = st.number_input("N° Appt", 1, 95)
+            cle = f"La Dussaude - Appt {app_a}"
         
-        nom_add = st.text_input("Nom du locataire")
-        
-        if st.button("Enregistrer le locataire"):
-            st.session_state['locataires'][cle_loc] = nom_add
-            sauvegarder_tous_locataires(st.session_state['locataires'])
-            st.success(f"Enregistré : {nom_add}")
+        nom_a = st.text_input("Nom")
+        if st.button("Enregistrer"):
+            sauvegarder_locataire(cle, nom_a)
+            st.success("Enregistré dans Google Sheets !")
             st.rerun()
 
-    with tab_suppr:
-        if st.session_state['locataires']:
-            choix_suppr = st.selectbox("Logement à vider", list(st.session_state['locataires'].keys()))
-            if st.button("Supprimer ce locataire"):
-                del st.session_state['locataires'][choix_suppr]
-                sauvegarder_tous_locataires(st.session_state['locataires'])
-                st.error("Locataire supprimé.")
+    with tab_s:
+        df_current = charger_donnees()
+        if not df_current.empty:
+            log_s = st.selectbox("Supprimer", df_current['Logement'].tolist())
+            if st.button("Confirmer suppression"):
+                supprimer_locataire(log_s)
+                st.error("Supprimé !")
                 st.rerun()
-        else:
-            st.write("Aucun locataire en base.")
 
-# --- 3. FORMULAIRE PRINCIPAL ---
-st.title("🏢 Rapport d'Intervention")
-
-with st.form("rapport_form"):
-    residence = st.selectbox("📍 Sélectionner la Résidence", ["Canterane", "La Dussaude"])
-    
+# Formulaire Principal
+df_base = charger_donnees()
+with st.form("rapport"):
+    res = st.selectbox("📍 Résidence", ["Canterane", "La Dussaude"])
     col1, col2 = st.columns(2)
-    
     with col1:
-        # Logique différente selon la résidence
-        if residence == "Canterane":
-            batiment = st.radio("Bâtiment", ["Bâtiment A", "Bâtiment B"], horizontal=True)
-            n_appt = st.text_input("N° Appartement")
-            id_logement = f"Canterane - {batiment} - Appt {n_appt}"
+        if res == "Canterane":
+            bat = st.radio("Bâtiment", ["A", "B"], horizontal=True)
+            n = st.text_input("Appt")
+            id_l = f"Canterane - Bat {bat} - Appt {n}"
         else:
-            # LA DUSSAUDE : Pas de bâtiment, direct numéro
-            n_appt = st.number_input("N° Appartement (1 à 95)", 1, 95)
-            id_logement = f"La Dussaude - Appt {n_appt}"
+            n = st.number_input("Appt", 1, 95)
+            id_l = f"La Dussaude - Appt {n}"
         
-        # Recherche automatique du locataire
-        nom_detecte = st.session_state['locataires'].get(id_logement, "")
-        nom_locataire = st.text_input("👤 Nom du Locataire", value=nom_detecte)
-        if not nom_detecte and n_appt:
-            st.caption("ℹ️ Inconnu. Ajoutez-le dans le menu de gauche si besoin.")
+        # Recherche dans le DataFrame Google Sheets
+        nom_trouve = ""
+        if not df_base.empty and id_l in df_base['Logement'].values:
+            nom_trouve = df_base.loc[df_base['Logement'] == id_l, 'Nom'].values[0]
+        
+        nom = st.text_input("👤 Locataire", value=nom_trouve)
 
     with col2:
-        # Date au format FR
-        date_visite = st.date_input("📅 Date d'intervention", value=date.today(), format="DD/MM/YYYY")
-        priorite = st.selectbox("🚦 Urgence", ["Faible", "Moyenne", "Haute"])
+        d = st.date_input("📅 Date", format="DD/MM/YYYY")
+        p = st.selectbox("🚦 Urgence", ["Faible", "Moyenne", "Haute"])
 
-    categorie = st.selectbox("🛠️ Catégorie", ["Plomberie", "Chauffage", "Électricité", "VMC", "Serrurerie", "Propreté", "Autre"])
-    
-    details_dict = {
-        "Plomberie": ["Fuite sous évier", "Chasse d'eau HS", "Robinet qui goutte", "Canalisation bouchée"],
-        "Chauffage": ["Radiateur froid", "Bruit anormal", "Fuite chaudière", "Pas d'eau chaude"],
-        "VMC": ["Ne tourne plus", "Bruit excessif", "Grille encrassée"],
-        "Électricité": ["Panne totale", "Prise défectueuse", "Interphone HS", "Lumière commune"],
-        "Serrurerie": ["Serrure bloquée", "Porte frotte", "Clé cassée"],
-        "Propreté": ["Encombrants", "Nettoyage requis", "Poubelles"],
-        "Autre": ["Voir les notes ci-dessous"]
-    }
-    
-    problemes = st.multiselect("Détails du constat", details_dict[categorie])
-    notes = st.text_area("Observations complémentaires (Actions menées, etc.)")
+    cat = st.selectbox("🛠️ Type", ["Plomberie", "Chauffage", "Électricité", "VMC", "Serrurerie", "Autre"])
+    notes = st.text_area("Observations")
 
-    submit = st.form_submit_button("GÉNÉRER LE MESSAGE")
-
-# --- 4. RÉSULTAT ---
-if submit:
-    date_fr = date_visite.strftime('%d/%m/%Y')
-    liste_constats = ", ".join(problemes)
-    
-    message = f"""Bonjour,
-
-Suite à mon passage le {date_fr} à la résidence {residence}, je vous informe d'un problème :
-📍 {id_logement}
-👤 Locataire : {nom_locataire if nom_locataire else "Non renseigné"}
-
-DÉTAILS :
-- Type : {categorie}
-- Constat : {liste_constats}
-- Urgence : {priorite.upper()}
-- Note : {notes if notes else "RAS"}
-
-Merci de faire le nécessaire.
-Cordialement,
-Votre chargé d'immeuble."""
-
-    st.success("Message prêt ! Copiez-le ci-dessous :")
-    st.code(message, language="markdown")
+    if st.form_submit_button("GÉNÉRER"):
+        msg = f"Bonjour,\nPassage le {d.strftime('%d/%m/%Y')} - {res}\n📍 {id_l}\n👤 Locataire : {nom}\n\nConstat : {cat}\nNote : {notes}"
+        st.code(msg)
