@@ -8,7 +8,7 @@ st.set_page_config(page_title="ImmoCheck Pro GS", page_icon="🏢", layout="wide
 
 # --- CONNEXION GOOGLE SHEETS ---
 # Note : Il faudra configurer l'URL dans les secrets de Streamlit Cloud
-conn = st.connection("gsheets", type=GSheetsConnection)
+conn = st.connection("gsheets", type=GSheetsConnection, spreadsheet="https://docs.google.com/spreadsheets/d/1gxIuKNrgXjJeJ40-zBZ-VDiWXgGrzfOuxcyXnnHLtYY/edit#gid=0")
 
 def charger_donnees():
     try:
@@ -98,3 +98,4 @@ with st.form("rapport"):
     if st.form_submit_button("GÉNÉRER"):
         msg = f"Bonjour,\nPassage le {d.strftime('%d/%m/%Y')} - {res}\n📍 {id_l}\n👤 Locataire : {nom}\n\nConstat : {cat}\nNote : {notes}"
         st.code(msg)
+
