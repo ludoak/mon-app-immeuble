@@ -8,7 +8,7 @@ import pandas as pd
 # On met la clé ici pour être SUR que l'IA la voit
 CLE_IA = "AIzaSyAiAI7LNaeqHw5OjVJK6XIrNsCFQNsf4bY"
 genai.configure(api_key=CLE_IA)
-model = genai.GenerativeModel('gemini-pro-vision')
+model = genai.GenerativeModel('gemini-1.0-pro-vision-latest')
 st.set_page_config(page_title="ImmoCheck Pro", page_icon="🏢")
 
 st.title("🏢 Rapport d'Intervention")
@@ -42,5 +42,6 @@ with st.container(border=True):
         date_j = date.today().strftime('%d/%m/%Y')
         rapport = f"RAPPORT DU {date_j}\nLIEU : {res} Apt {n}\nLOCATAIRE : {nom}\n\nCONSTAT :\n{notes}"
         st.code(rapport)
+
 
 
