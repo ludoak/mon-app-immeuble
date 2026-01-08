@@ -2,9 +2,12 @@ import streamlit as st
 from datetime import date
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import google.generativeai as genai
+from PIL import Image
+import io
 
 # Configuration de la page
-st.set_page_config(page_title="ImmoCheck Pro", page_icon="🏢", layout="wide")
+st.set_page_config(page_title="ImmoCheck Pro IA", page_icon="📸", layout="wide")
 
 # --- CONNEXION GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -31,10 +34,18 @@ def supprimer_locataire(logement):
     conn.update(worksheet="Locataires", data=df)
     st.cache_data.clear()
 
+# --- CONFIGURATION GEMINI (IA) ---
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model_vision = genai.GenerativeModel('gemini-pro-vision')
+except Exception as e:
+    st.error(f"Erreur de configuration Gemini : {e}. Assurez-vous que GEMINI_API_KEY est dans les Secrets.")
+    model_vision = None
+
 # --- CHARGEMENT DES DONNÉES ---
 df_base = charger_donnees()
 
-st.title("🏢 Rapport d'Intervention ImmoCheck")
+st.title("🏢 Rapport d'Intervention ImmoCheck Pro IA")
 
 # --- BARRE LATÉRALE : GESTION DES LOCATAIRES ---
 with st.sidebar:
@@ -53,9 +64,9 @@ with st.sidebar:
             cle_loc = f"La Dussaude - Appt {app_a}"
         
         nom_a = st.text_input("Nom du locataire", key="nom_add")
-        if st.button("💾 Enregistrer"):
+        if st.button("💾 Enregistrer le locataire"):
             sauvegarder_locataire(cle_loc, nom_a)
-            st.success("Enregistré !")
+            st.success("Enregistré dans Google Sheets !")
             st.rerun()
 
     with tab_suppr:
@@ -69,7 +80,7 @@ with st.sidebar:
             st.write("La base est vide.")
 
 # --- FORMULAIRE PRINCIPAL ---
-st.subheader("📝 Nouveau Constat")
+st.subheader("📝 Nouveau Constat avec IA")
 
 # Sélection du logement HORS du formulaire pour la recherche instantanée
 col1, col2 = st.columns(2)
@@ -90,10 +101,45 @@ if not df_base.empty and id_logement in df_base['Logement'].values:
 
 with col2:
     date_visite = st.date_input("📅 Date", format="DD/MM/YYYY")
-    st.text_input("👤 Locataire identifié", value=nom_locataire, disabled=True)
+    st.text_input("👤 Locataire (auto)", value=nom_locataire, disabled=True)
 
 # Début du formulaire pour le reste des infos
-with st.form("rapport_technique"):
+with st.form("rapport_technique_ia"):
+    st.markdown("---")
+    st.write("### 📸 Prenez une photo du problème :")
+    uploaded_file = st.camera_input("Prendre une photo") # Utilise la caméra du téléphone
+    
+    observations_ia = ""
+    if uploaded_file is not None:
+        # Afficher l'image prise
+        st.image(uploaded_file, caption="Photo du problème", use_column_width=True)
+        
+        # Préparer l'image pour Gemini
+        image_bytes = uploaded_file.getvalue()
+        image_pil = Image.open(io.BytesIO(image_bytes))
+
+        # Appel à Gemini pour l'analyse
+        if st.button("🔍 Analyser la photo avec l'IA"):
+            if model_vision:
+                with st.spinner("Analyse en cours par l'IA..."):
+                    try:
+                        prompt = "Décris en français le problème visible sur cette photo pour un rapport d'intervention technique. Sois concis et professionnel. Exemple: 'Fuite d'eau sous l'évier', 'Prise électrique endommagée', 'Traces d'humidité sur le mur', 'Joint de baignoire à refaire'."
+                        response = model_vision.generate_content([prompt, image_pil])
+                        observations_ia = response.text
+                        st.session_state.observations_ia = observations_ia # Pour conserver le texte
+                    except Exception as e:
+                        st.error(f"Erreur lors de l'analyse IA : {e}")
+                        st.session_state.observations_ia = "Impossible d'analyser la photo."
+            else:
+                st.warning("L'IA Gemini n'est pas configurée.")
+                st.session_state.observations_ia = "IA non disponible."
+
+    # Afficher le résultat de l'IA (ou vide si pas de photo/analyse)
+    observations_finales = st.text_area("🗒️ Observations détaillées (modifiable ou IA)", 
+                                        value=st.session_state.get('observations_ia', ''), # Récupère le texte de l'IA ou vide
+                                        height=150)
+
+    st.markdown("---")
     urgence = st.select_slider("🚦 Urgence", options=["Faible", "Moyenne", "Haute"])
     
     type_probleme = st.selectbox("🛠️ Type de problème", [
@@ -106,12 +152,12 @@ with st.form("rapport_technique"):
         "Autre"
     ])
     
-    observations = st.text_area("🗒️ Observations")
-
     soumettre = st.form_submit_button("🚀 GÉNÉRER LE RAPPORT")
 
 # --- AFFICHAGE DU MESSAGE ---
 if soumettre:
+    st.success("Rapport généré ! Copiez le texte ci-dessous :")
+    
     msg = f"""*RAPPORT D'INTERVENTION* 🏢
 ----------------------------------
 📍 *Lieu :* {id_logement}
@@ -120,6 +166,8 @@ if soumettre:
 🚦 *Urgence :* {urgence}
 
 🛠️ *Type :* {type_probleme}
-📝 *Constat :* {observations}
+📝 *Constat :* {observations_finales}
 ----------------------------------"""
+    
     st.code(msg, language="text")
+    st.info("💡 Vous pouvez maintenant copier ce texte et l'envoyer par SMS ou Email.")
