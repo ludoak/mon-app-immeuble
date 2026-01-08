@@ -19,7 +19,7 @@ except Exception as e:
 # --- 2. CONFIGURATION IA GEMINI ---
 if "GEMINI_API_KEY" in st.secrets:
     try:
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        genai.configure(api_key=st.secrets["AIzaSyAiAI7LNaeqHw5OjVJK6XIrNsCFQNsf4bY"])
         model = genai.GenerativeModel('gemini-1.5-flash')
     except Exception as e:
         st.error(f"Erreur technique IA : {e}")
@@ -120,3 +120,4 @@ with st.container(border=True):
         st.divider()
         st.subheader("✅ Texte à copier :")
         st.code(rapport, language="text")
+
