@@ -2,50 +2,76 @@ import streamlit as st
 from datetime import date
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import google.generativeai as genai
+from PIL import Image
 
-# Configuration simple
-st.set_page_config(page_title="ImmoCheck Pro", page_icon="🏢", layout="wide")
+# Configuration
+st.set_page_config(page_title="ImmoCheck IA", page_icon="🏢", layout="wide")
 
-# --- CONNEXION GOOGLE SHEETS ---
+# --- CONNEXIONS ---
+# 1. Google Sheets
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    df_base = conn.read(worksheet="Locataires", ttl=0)
-except Exception as e:
-    st.error(f"Erreur de connexion au tableau : {e}")
-    df_base = pd.DataFrame(columns=["Logement", "Nom"])
+except Exception:
+    st.error("Erreur de connexion Google Sheets. Vérifiez vos Secrets.")
+
+# 2. Gemini IA
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception:
+    st.warning("IA non configurée. Vérifiez GEMINI_API_KEY dans les Secrets.")
+
+# --- FONCTIONS ---
+def charger_donnees():
+    try:
+        return conn.read(worksheet="Locataires", ttl=0)
+    except:
+        return pd.DataFrame(columns=["Logement", "Nom"])
+
+def sauvegarder_locataire(logement, nom):
+    df = charger_donnees()
+    if logement in df['Logement'].values:
+        df.loc[df['Logement'] == logement, 'Nom'] = nom
+    else:
+        new_row = pd.DataFrame({"Logement": [logement], "Nom": [nom]})
+        df = pd.concat([df, new_row], ignore_index=True)
+    conn.update(worksheet="Locataires", data=df)
+    st.cache_data.clear()
 
 # --- INTERFACE ---
-st.title("🏢 Rapport d'Intervention")
+st.title("🏢 Rapport avec Analyse IA")
 
-# Barre latérale pour gérer les locataires
+# Sidebar : Gestion Locataires
 with st.sidebar:
     st.header("👥 Base Locataires")
-    if st.button("🔄 Actualiser la liste"):
-        st.rerun()
-    
-    st.info("Utilisez votre Google Sheet pour modifier la liste des locataires pour le moment.")
+    res_a = st.selectbox("Résidence", ["Canterane", "La Dussaude"])
+    nom_a = st.text_input("Nom du locataire")
+    # Choix appt selon résidence...
+    if st.button("Enregistrer Locataire"):
+        # Logique de clé logement simplifiée pour l'exemple
+        sauvegarder_locataire(f"{res_a} - Manuel", nom_a)
+        st.success("Enregistré !")
 
 # Formulaire Principal
-with st.form("rapport"):
+df_base = charger_donnees()
+with st.form("rapport_ia"):
     res = st.selectbox("📍 Résidence", ["Canterane", "La Dussaude"])
+    nom = st.text_input("👤 Nom du Locataire")
     
-    if res == "Canterane":
-        bat = st.radio("Bâtiment", ["A", "B"], horizontal=True)
-        n = st.text_input("N° Appt")
-        id_l = f"Canterane - Bat {bat} - Appt {n}"
-    else:
-        n = st.number_input("N° Appt", 1, 95)
-        id_l = f"La Dussaude - Appt {n}"
+    st.divider()
+    st.subheader("📸 Analyse des dégâts par IA")
+    photo = st.camera_input("Prendre une photo du problème")
     
-    # Recherche du nom
-    nom_trouve = ""
-    if not df_base.empty and id_l in df_base['Logement'].values:
-        nom_trouve = df_base.loc[df_base['Logement'] == id_l, 'Nom'].values[0]
-    
-    nom = st.text_input("👤 Nom du Locataire", value=nom_trouve)
-    cat = st.selectbox("🛠️ Type", ["Plomberie", "Chauffage", "Électricité", "VMC", "Serrurerie", "Autre"])
-    notes = st.text_area("Observations")
+    analyse_ia = ""
+    if photo:
+        img = Image.open(photo)
+        with st.spinner("L'IA analyse la photo..."):
+            response = model.generate_content(["Décris précisément ce problème technique dans un immeuble (fuite, fissure, etc.) en 2 phrases pour un rapport.", img])
+            analyse_ia = response.text
+            st.info(f"Analyse suggérée : {analyse_ia}")
 
-    if st.form_submit_button("GÉNÉRER LE MESSAGE"):
-        msg = f"Passage le {date.today().strftime('%d/%m/%Y')}\n📍 {id_l}\n👤 Locataire : {nom}\n🛠️ {cat}\n📝 {notes}"
-        st.code(msg)
+    notes = st.text_area("Observations complémentaires", value=analyse_ia)
+
+    if st.form_submit_button("GÉNÉRER LE RAPPORT"):
+        st.write(f"Rapport prêt pour {nom} à {res}")
