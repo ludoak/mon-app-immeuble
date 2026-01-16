@@ -5,91 +5,112 @@ import google.generativeai as genai
 from PIL import Image
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="GH Diagnostic Pro", layout="wide")
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="GH Diagnostic Rapide", layout="wide")
 
 # IA Gemini 3
 api_key = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=api_key)
 
-# Connexion GSheets (Lien Éditeur pour écriture)
+# Connexion GSheets
 conn = st.connection("gsheets", type=GSheetsConnection)
-url_fiche = st.secrets["connections"]["gsheets"]["spreadsheet"]
 
-def charger_onglet(nom):
+# --- 2. FONCTIONS DE LECTURE/ÉCRITURE ---
+def charger_donnees(nom_onglet):
     try:
-        return conn.read(spreadsheet=url_fiche, worksheet=nom, ttl=0)
-    except:
-        return pd.DataFrame()
+        # On récupère l'URL et on enlève tout ce qui dépasse après l'ID du document
+        url_brute = st.secrets["connections"]["gsheets"]["spreadsheet"]
+        url_propre = url_brute.split("/edit")[0].split("/pub")[0]
+        
+        # On lit l'onglet spécifique
+        df = conn.read(spreadsheet=url_propre, worksheet=nom_onglet, ttl=0)
+        
+        # Nettoyage des colonnes
+        df.columns = df.columns.str.strip()
+        return df
+    except Exception as e:
+        # Si l'onglet spécifique échoue, on tente de lire le fichier sans préciser l'onglet
+        try:
+            url_brute = st.secrets["connections"]["gsheets"]["spreadsheet"]
+            url_propre = url_brute.split("/edit")[0].split("/pub")[0]
+            df = conn.read(spreadsheet=url_propre, ttl=0)
+            df.columns = df.columns.str.strip()
+            return df
+        except:
+            return pd.DataFrame()
 
-# --- CHARGEMENT ---
-df_base = charger_onglet("Base_Locataires")
+# --- 3. CHARGEMENT DES DONNÉES ---
+df_base = charger_donnees("Base_Locataires")
 
-st.title("🚀 GH Diagnostic & Historique")
+st.title("🚀 GH Diagnostic Rapide")
 
 tab1, tab2, tab3 = st.tabs(["🔍 Diagnostic", "👥 Gestion Locataires", "📜 Historique"])
 
 # --- TAB 1 : DIAGNOSTIC ---
 with tab1:
-    if not df_base.empty:
+    if not df_base.empty and 'Nom' in df_base.columns:
         col1, col2 = st.columns(2)
         with col1:
-            residence = st.selectbox("Résidence", df_base['Résidence'].unique())
+            res_list = df_base['Résidence'].unique()
+            residence = st.selectbox("Résidence", res_list)
             df_res = df_base[df_base['Résidence'] == residence]
-            appt_sel = st.selectbox("N° Appartement", sorted(df_res['Appartement'].astype(str).unique()))
+            
+            appts = sorted(df_res['Appartement'].astype(str).unique())
+            appt_sel = st.selectbox("N° Appartement", appts)
+            
             nom_loc = df_res[df_res['Appartement'].astype(str) == appt_sel]['Nom'].iloc[0]
             st.info(f"👤 **Locataire : {nom_loc}**")
-        with col2:
-            foto = st.file_uploader("📸 Photo du désordre", type=["jpg", "png", "jpeg"])
-            note = st.text_input("🗒️ Note technique")
 
-        if st.button("🔍 ANALYSER", type="primary", use_container_width=True):
+        with col2:
+            foto = st.file_uploader("📸 Photo", type=["jpg", "png", "jpeg"])
+            note = st.text_input("🗒️ Note technique (ex: moisissures)")
+
+        if st.button("🔍 ANALYSER LE DÉFAUT", type="primary", use_container_width=True):
             with st.spinner("Analyse par Gemini 3..."):
-                model = genai.GenerativeModel('gemini-3-flash-preview')
-                res = model.generate_content([f"Expert GH: {note}", Image.open(foto)] if foto else f"Expert GH: {note}")
-                
-                # Affichage résultat
-                st.subheader("Diagnostic :")
-                st.success(res.text)
-                
-                # SAUVEGARDE AUTO DANS L'HISTORIQUE
                 try:
-                    df_h = charger_onglet("Historique")
-                    nouvelle_ligne = pd.DataFrame([[
-                        datetime.now().strftime("%d/%m/%Y %H:%M"), 
-                        f"{residence}-{appt_sel}", 
-                        nom_loc, 
-                        res.text
-                    ]], columns=["Date", "Lieu", "Locataire", "Diagnostic"])
+                    model = genai.GenerativeModel('gemini-3-flash-preview')
+                    prompt = f"Expert technique GH. Analyse : {note}. Charge locative ?"
+                    res = model.generate_content([prompt, Image.open(foto)] if foto else prompt)
+                    st.subheader("Diagnostic :")
+                    st.success(res.text)
                     
-                    df_h = pd.concat([df_h, nouvelle_ligne], ignore_index=True)
-                    conn.update(spreadsheet=url_fiche, worksheet="Historique", data=df_h)
-                    st.toast("✅ Rapport enregistré !")
+                    # Sauvegarde Historique
+                    try:
+                        url_brute = st.secrets["connections"]["gsheets"]["spreadsheet"]
+                        url_propre = url_brute.split("/edit")[0]
+                        df_h = conn.read(spreadsheet=url_propre, worksheet="Historique", ttl=0)
+                        n_ligne = pd.DataFrame([[datetime.now().strftime("%d/%m/%Y"), f"{residence}-{appt_sel}", nom_loc, res.text]], 
+                                               columns=["Date", "Lieu", "Locataire", "Diagnostic"])
+                        df_h = pd.concat([df_h, n_ligne], ignore_index=True)
+                        conn.update(spreadsheet=url_propre, worksheet="Historique", data=df_h)
+                    except:
+                        st.warning("⚠️ Impossible d'écrire dans l'onglet 'Historique'.")
                 except Exception as e:
-                    st.error(f"Erreur d'enregistrement historique : {e}")
+                    st.error(f"Erreur IA : {e}")
     else:
-        st.error("Base de données introuvable. Vérifiez les onglets du Google Sheets.")
+        st.error("❌ La base de données est vide ou mal formatée. Vérifiez vos titres de colonnes.")
 
 # --- TAB 2 : GESTION ---
 with tab2:
     st.subheader("➕ Ajouter un locataire")
-    with st.form("ajout_form"):
+    with st.form("add"):
         c1, c2, c3, c4 = st.columns(4)
         r = c1.selectbox("Résidence", ["Canterane", "La Dussaude"])
         b = c2.selectbox("Bâtiment", ["A", "B", "N/A"])
-        a = c3.text_input("N° Appt")
-        n = c4.text_input("Nom du locataire")
-        if st.form_submit_button("Enregistrer dans la base"):
-            new_df = pd.concat([df_base, pd.DataFrame([[r, b, a, n]], columns=df_base.columns)], ignore_index=True)
-            conn.update(spreadsheet=url_fiche, worksheet="Base_Locataires", data=new_df)
-            st.success("Locataire ajouté ! Veuillez rafraîchir la page.")
+        a = c3.text_input("Appartement")
+        n = c4.text_input("Nom")
+        if st.form_submit_button("Valider"):
+            new_row = pd.DataFrame([[r, b, a, n]], columns=df_base.columns)
+            df_total = pd.concat([df_base, new_row], ignore_index=True)
+            url_propre = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/edit")[0]
+            conn.update(spreadsheet=url_propre, worksheet="Base_Locataires", data=df_total)
+            st.success("Ajouté ! Rafraîchissez la page.")
 
 # --- TAB 3 : HISTORIQUE ---
 with tab3:
-    if st.button("🔄 Actualiser la liste"):
-        st.rerun()
-    df_histo = charger_onglet("Historique")
-    if not df_histo.empty:
-        st.dataframe(df_histo.sort_index(ascending=False), use_container_width=True)
-    else:
-        st.write("L'historique est vide pour le moment.")
+    try:
+        url_propre = st.secrets["connections"]["gsheets"]["spreadsheet"].split("/edit")[0]
+        df_hist = conn.read(spreadsheet=url_propre, worksheet="Historique", ttl=0)
+        st.dataframe(df_hist.sort_index(ascending=False), use_container_width=True)
+    except:
+        st.write("Historique vide.")
