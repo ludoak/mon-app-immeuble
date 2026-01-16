@@ -10,23 +10,27 @@ api_key = st.secrets.get("GEMINI_API_KEY")
 if api_key:
     genai.configure(api_key=api_key)
 else:
-    st.error("Clé manquante")
+    st.error("Clé API manquante dans les Secrets")
 
-# --- 2. INTERFACE SIMPLIFIÉE POUR TEST ---
-st.subheader("🛠️ Test Diagnostic Technique")
+# --- 2. INTERFACE ---
+st.subheader("🛠️ Diagnostic Technique")
 
 source_photo = st.file_uploader("📸 Photo", type=["jpg", "jpeg", "png"])
 notes = st.text_input("🗒️ Notes")
-lancer = st.button("🔍 LANCER L'ANALYSE")
+lancer = st.button("🔍 ANALYSER", type="primary")
 
 if lancer:
     if source_photo or notes:
-        with st.spinner("Analyse..."):
+        with st.spinner("Analyse en cours..."):
             try:
-                # Utilisation du nom standard que toutes les versions reconnaissent
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                # METHODE DE SECOURS : On essaie 'gemini-1.5-flash'
+                # Si ça rate, on essaie 'gemini-pro'
+                try:
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                except:
+                    model = genai.GenerativeModel('gemini-pro')
                 
-                prompt = "Tu es inspecteur technique. Analyse ce problème et dis si c'est au locataire. Phrase obligatoire : Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire."
+                prompt = f"Expert technique. Analyse : {notes}. Dis si c'est au locataire. Phrase : Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire."
                 
                 if source_photo:
                     img = Image.open(source_photo)
@@ -34,7 +38,8 @@ if lancer:
                 else:
                     response = model.generate_content(prompt)
                 
-                st.write("### Résultat :")
-                st.write(response.text)
+                st.info(response.text)
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                # Si ça affiche encore 404, on affiche une aide précise
+                st.error(f"Erreur de modèle : {e}")
+                st.warning("Conseil : Allez sur Streamlit Cloud, cliquez sur 'Settings' > 'Delete Cache' puis 'Reboot'.")
