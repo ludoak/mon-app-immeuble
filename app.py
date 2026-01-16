@@ -21,7 +21,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def charger_donnees():
     try:
-        # Lecture de l'onglet Base_Locataires
         data = conn.read(worksheet="Base_Locataires", ttl=0)
         data.columns = data.columns.str.strip()
         if 'Appartement' in data.columns:
@@ -53,7 +52,6 @@ st.subheader("🛠️ Plateforme de signalement Gironde Habitat")
 with st.container(border=True):
     col_in1, col_in2 = st.columns([1, 1.5])
     with col_in1:
-        # Permet de prendre une photo ou d'en choisir une dans la galerie
         source_photo = st.file_uploader("📸 Photo (Caméra ou Galerie)", type=["jpg", "jpeg", "png"])
         if source_photo:
             st.image(source_photo, caption="Image sélectionnée", width=300)
@@ -61,7 +59,6 @@ with st.container(border=True):
     with col_in2:
         notes = st.text_input("🗒️ Notes / Observations terrain", placeholder="Ex: Joint de douche noirci...")
         type_inter = st.selectbox("Type d'intervention", list(PRESTATAIRES.keys()))
-        # Bouton pour déclencher l'IA
         lancer_analyse = st.button("🔍 LANCER L'ANALYSE TECHNIQUE", type="primary", use_container_width=True)
 
 with st.expander("📍 Lieu et Locataire", expanded=True):
@@ -97,27 +94,20 @@ phrase_locatif = "Ce remplacement relève de l'entretien courant et des menues r
 
 if lancer_analyse:
     if source_photo or notes:
-        with st.spinner("Analyse technique par l'IA en cours..."):
+        with st.spinner("Analyse technique en cours..."):
             try:
+                # CORRECTION ICI : Utilisation de gemini-1.5-flash sans prefixe models/
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                # Prompt d'expertise technique spécialisé Gironde Habitat
                 prompt = f"""Tu es l'inspecteur expert technique de Gironde Habitat. 
                 Analyse les notes : '{notes}' et l'image fournie.
                 
-                RÈGLES DE CHARGE LOCATIVE (ORANGE) :
-                - MOISISSURES : Si visibles sur joints ou parois = Défaut d'entretien ou manque d'aération.
-                - JOINTS : Silicone noirci, décollé ou fuyant = Entretien locataire.
-                - VITRES/POIGNÉES : Cassées ou arrachées = Dégradation.
+                RÈGLES :
+                - MOISISSURES/JOINTS : Si visible = Entretien locataire.
+                - Si c'est un cas locatif, insère obligatoirement : '{phrase_locatif}'.
                 
-                CONSIGNE :
-                1. Identifie précisément le problème technique.
-                2. Si c'est un cas 'Orange', insère obligatoirement : '{phrase_locatif}'.
-                3. Propose une solution (ex: nettoyer avec du vinaigre/javel ou refaire le joint).
-                4. Sois poli, professionnel et rigoureux.
-
                 Format de réponse :
-                Bonjour, [Diagnostic technique] + [Responsabilité]. Cordialement."""
+                Bonjour, [Diagnostic technique visuel] + [Responsabilité]. Cordialement."""
                 
                 if source_photo:
                     img = Image.open(source_photo)
@@ -126,20 +116,20 @@ if lancer_analyse:
                     response = model.generate_content(prompt)
                 objet_ia = response.text
             except Exception as e:
-                objet_ia = f"Désolé, une erreur est survenue lors de l'analyse : {str(e)}"
+                # Tentative avec un nom de modèle alternatif si le premier échoue
+                try:
+                    model = genai.GenerativeModel('gemini-pro')
+                    response = model.generate_content(prompt)
+                    objet_ia = response.text
+                except:
+                    objet_ia = f"Erreur de connexion au modèle : {str(e)}"
     else:
-        st.warning("⚠️ Merci d'ajouter une photo ou une observation avant de lancer l'analyse.")
+        st.warning("⚠️ Ajoutez une photo ou une observation.")
 
 st.divider()
 st.subheader("🔍 Rapport de l'Inspecteur IA")
-constat_final = st.text_area("Résultat de l'analyse :", value=objet_ia, height=300)
+constat_final = st.text_area("Résultat :", value=objet_ia, height=300)
 
 # --- 5. ACTIONS ---
-col_b1, col_b2 = st.columns(2)
-with col_b1:
-    if st.button("📑 GÉNÉRER LE RAPPORT FINAL"):
-        st.code(f"🏢 SIGNALEMENT GIRONDE HABITAT\n👤 CONCERNÉ : {nom}\n📍 LIEU : {lieu_ia}\n📅 DATE : {date.today()}\n\n{objet_ia}", language="text")
-
-with col_b2:
-    if st.button("🧹 REPARTIR À ZÉRO"):
-        st.rerun()
+if st.button("📑 GÉNÉRER LE RAPPORT FINAL"):
+    st.code(f"🏢 SIGNALEMENT GIRONDE HABITAT\n👤 CONCERNÉ : {nom}\n📍 LIEU : {lieu_ia}\n\n{objet_ia}", language="text")
