@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 import os
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION PAGE ---
 st.set_page_config(page_title="GH Diagnostic Pro", layout="wide")
 
 # --- 2. GESTION DU FICHIER DE SAUVEGARDE ---
@@ -30,10 +30,7 @@ def sauvegarder_donnees(df):
 if 'df_locataires' not in st.session_state:
     st.session_state.df_locataires = charger_donnees()
 
-# --- 3. CONFIGURATION IA ---
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-
-# --- 4. INTERFACE ---
+# --- 3. INTERFACE ---
 tab1, tab2 = st.tabs(["📸 Diagnostic Direct", "👥 Gestion Locataires"])
 
 with tab1:
@@ -51,67 +48,66 @@ with tab1:
     st.success(f"👤 Locataire : **{nom_loc}**")
 
     st.markdown("---")
-
-    # --- DOUBLE OPTION PHOTO ---
-    st.subheader("📷 Étape 1 : Prendre ou Choisir une photo")
-    cam_photo = st.camera_input("Option A : Appareil photo en direct")
-    file_photo = st.file_uploader("Option B : Choisir depuis la galerie", type=["jpg", "png", "jpeg"])
-
+    cam_photo = st.camera_input("Option A : Appareil photo")
+    file_photo = st.file_uploader("Option B : Galerie", type=["jpg", "png", "jpeg"])
     photo = cam_photo if cam_photo is not None else file_photo
 
     if photo:
-        if st.button("🔍 LANCER L'ANALYSE EXPERTE", type="primary", use_container_width=True):
-            with st.spinner("Analyse en cours..."):
-                # LISTE DES MODÈLES (Gemini 3 en priorité, Flash en secours pour le quota)
-                modeles_a_tester = ['gemini-3-flash-preview', 'gemini-1.5-flash']
-                success = False
+        if st.button("🔍 LANCER L'ANALYSE", type="primary", use_container_width=True):
+            with st.spinner("Analyse en cours (Vérification des accès)..."):
+                # On récupère les deux clés depuis les secrets
+                cles = [st.secrets.get("GEMINI_API_KEY"), st.secrets.get("GEMINI_API_KEY_2")]
+                # Noms de modèles standardisés pour éviter l'erreur 404
+                modeles = ['gemini-1.5-flash', 'gemini-1.5-pro']
                 
-                for nom_modele in modeles_a_tester:
-                    if not success:
+                success = False
+                for c in cles:
+                    if c and not success:
                         try:
-                            model = genai.GenerativeModel(nom_modele)
-                            prompt = "Expert bâtiment GH. Analyse cette photo, décris le problème technique et conclus par CODE_RESULTAT:GH, CODE_RESULTAT:LOC ou CODE_RESULTAT:PREST."
-                            
-                            img = Image.open(photo)
-                            response = model.generate_content([prompt, img], safety_settings={
-                                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", 
-                                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE", 
-                                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-                            })
-                            
-                            if response.candidates and response.candidates[0].content.parts:
-                                reponse_ia = response.text
-                                success = True
-                                
-                                # --- LOGIQUE DE BADGE ---
-                                type_c = "🏢 CHARGE GH"
-                                label_s = "Charge GH"
-                                if "CODE_RESULTAT:LOC" in reponse_ia: 
-                                    type_c = "🛠️ CHARGE LOCATIVE"; label_s = "Charge Locative"
-                                elif "CODE_RESULTAT:PREST" in reponse_ia: 
-                                    type_c = "🏗️ CHARGE PRESTATAIRE"; label_s = "Charge Prestataire"
-                                
-                                st.divider()
-                                st.metric("DÉCISION", type_c)
-                                description = reponse_ia.split("CODE_RESULTAT:")[0]
-                                st.write(description)
-                                st.caption(f"Analysé par : {nom_modele}")
-                                
-                                # --- COURRIER ---
-                                st.subheader("✉️ Courrier pour la plateforme")
-                                lettre = f"OBJET : Signalement technique - {res_sel} / Appt {appt_sel}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\nMadame, Monsieur,\n\nJ'ai constaté le désordre suivant chez M./Mme {nom_loc} (Appt {appt_sel}) :\n{description.strip()}\n\nCe désordre est classé en : {label_s}.\n\nCordialement,\nL'équipe technique GH."
-                                st.text_area("Texte à copier :", lettre, height=200)
-                        
-                        except Exception as e:
-                            if "429" in str(e) or "quota" in str(e).lower():
-                                continue # Passe au modèle suivant
-                            else:
-                                st.error(f"Erreur technique : {e}")
-                                break
+                            genai.configure(api_key=c)
+                            for m in modeles:
+                                if not success:
+                                    try:
+                                        model = genai.GenerativeModel(model_name=m)
+                                        img = Image.open(photo)
+                                        
+                                        # Demande d'analyse
+                                        response = model.generate_content([
+                                            "Expert bâtiment GH. Analyse cette photo, décris le problème technique précisément et conclus impérativement par CODE_RESULTAT:GH, CODE_RESULTAT:LOC ou CODE_RESULTAT:PREST.", 
+                                            img
+                                        ])
+                                        
+                                        if response and response.text:
+                                            reponse_ia = response.text
+                                            success = True
+                                            
+                                            # Logique de badge
+                                            type_c = "🏢 CHARGE GH"
+                                            label_s = "Charge GH"
+                                            if "CODE_RESULTAT:LOC" in reponse_ia:
+                                                type_c = "🛠️ CHARGE LOCATIVE"; label_s = "Charge Locative"
+                                            elif "CODE_RESULTAT:PREST" in reponse_ia:
+                                                type_c = "🏗️ CHARGE PRESTATAIRE"; label_s = "Charge Prestataire"
+                                            
+                                            st.divider()
+                                            st.metric("DÉCISION", type_c)
+                                            description = reponse_ia.split("CODE_RESULTAT:")[0]
+                                            st.write(description)
+                                            st.caption(f"Analysé avec succès par {m}")
+                                            
+                                            # Courrier auto
+                                            lettre = f"OBJET : Signalement technique - {res_sel} / Appt {appt_sel}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\nMadame, Monsieur,\n\nJ'ai constaté le désordre suivant dans le logement de M./Mme {nom_loc} (Appt {appt_sel}) :\n{description.strip()}\n\nCe désordre est classé en : {label_s}.\n\nCordialement,\nL'équipe technique GH."
+                                            st.text_area("Texte à copier :", lettre, height=200)
+                                            break
+                                    except Exception as e_inner:
+                                        # Si le modèle m échoue, on passe au modèle suivant
+                                        continue
+                        except Exception as e_outer:
+                            # Si la clé c échoue, on passe à la clé suivante
+                            continue
                 
                 if not success:
-                    st.error("❌ Quota dépassé sur tous les modèles. Réessayez dans une minute ou utilisez une autre clé API.")
+                    st.error("❌ Erreur de quota ou technique. Les clés ne répondent pas. Vérifie tes secrets ou attends 1 minute.")
 
 # --- ONGLET 2 : GESTION ---
 with tab2:
