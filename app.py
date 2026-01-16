@@ -8,7 +8,7 @@ import os
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="GH Diagnostic Pro", layout="wide")
 
-# --- 2. GESTION DU FICHIER ---
+# --- 2. GESTION DU FICHIER DE SAUVEGARDE ---
 DB_FILE = "base_locataires_gh.csv"
 
 def charger_donnees():
@@ -57,39 +57,61 @@ with tab1:
     cam_photo = st.camera_input("Option A : Appareil photo en direct")
     file_photo = st.file_uploader("Option B : Choisir depuis la galerie", type=["jpg", "png", "jpeg"])
 
-    # On utilise la photo disponible (priorité au direct)
     photo = cam_photo if cam_photo is not None else file_photo
 
     if photo:
         if st.button("🔍 LANCER L'ANALYSE EXPERTE", type="primary", use_container_width=True):
-            with st.spinner("Analyse Gemini 3 en cours..."):
-                try:
-                    model = genai.GenerativeModel('gemini-3-flash-preview')
-                    prompt = "Expert bâtiment GH. Analyse cette photo, décris le problème technique et conclus par CODE_RESULTAT:GH, CODE_RESULTAT:LOC ou CODE_RESULTAT:PREST."
-                    
-                    img = Image.open(photo)
-                    response = model.generate_content([prompt, img], safety_settings={
-                        "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                        "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE", "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-                    })
-                    
-                    if response.candidates and response.candidates[0].content.parts:
-                        reponse_ia = response.text
-                        type_c = "🏢 CHARGE GH"; label_s = "Charge GH"
-                        if "CODE_RESULTAT:LOC" in reponse_ia: type_c = "🛠️ CHARGE LOCATIVE"; label_s = "Charge Locative"
-                        elif "CODE_RESULTAT:PREST" in reponse_ia: type_c = "🏗️ CHARGE PRESTATAIRE"; label_s = "Charge Prestataire"
+            with st.spinner("Analyse en cours..."):
+                # LISTE DES MODÈLES (Gemini 3 en priorité, Flash en secours pour le quota)
+                modeles_a_tester = ['gemini-3-flash-preview', 'gemini-1.5-flash']
+                success = False
+                
+                for nom_modele in modeles_a_tester:
+                    if not success:
+                        try:
+                            model = genai.GenerativeModel(nom_modele)
+                            prompt = "Expert bâtiment GH. Analyse cette photo, décris le problème technique et conclus par CODE_RESULTAT:GH, CODE_RESULTAT:LOC ou CODE_RESULTAT:PREST."
+                            
+                            img = Image.open(photo)
+                            response = model.generate_content([prompt, img], safety_settings={
+                                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE", 
+                                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE", 
+                                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
+                            })
+                            
+                            if response.candidates and response.candidates[0].content.parts:
+                                reponse_ia = response.text
+                                success = True
+                                
+                                # --- LOGIQUE DE BADGE ---
+                                type_c = "🏢 CHARGE GH"
+                                label_s = "Charge GH"
+                                if "CODE_RESULTAT:LOC" in reponse_ia: 
+                                    type_c = "🛠️ CHARGE LOCATIVE"; label_s = "Charge Locative"
+                                elif "CODE_RESULTAT:PREST" in reponse_ia: 
+                                    type_c = "🏗️ CHARGE PRESTATAIRE"; label_s = "Charge Prestataire"
+                                
+                                st.divider()
+                                st.metric("DÉCISION", type_c)
+                                description = reponse_ia.split("CODE_RESULTAT:")[0]
+                                st.write(description)
+                                st.caption(f"Analysé par : {nom_modele}")
+                                
+                                # --- COURRIER ---
+                                st.subheader("✉️ Courrier pour la plateforme")
+                                lettre = f"OBJET : Signalement technique - {res_sel} / Appt {appt_sel}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\nMadame, Monsieur,\n\nJ'ai constaté le désordre suivant chez M./Mme {nom_loc} (Appt {appt_sel}) :\n{description.strip()}\n\nCe désordre est classé en : {label_s}.\n\nCordialement,\nL'équipe technique GH."
+                                st.text_area("Texte à copier :", lettre, height=200)
                         
-                        st.divider()
-                        st.metric("DÉCISION", type_c)
-                        description = reponse_ia.split("CODE_RESULTAT:")[0]
-                        st.write(description)
-                        
-                        # Courrier
-                        st.subheader("✉️ Courrier pour la plateforme")
-                        lettre = f"OBJET : Signalement technique - {res_sel} / Appt {appt_sel}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\nMadame, Monsieur,\n\nJ'ai constaté le désordre suivant chez M./Mme {nom_loc} (Appt {appt_sel}) :\n{description.strip()}\n\nCe désordre est classé en : {label_s}.\n\nCordialement,\nL'équipe technique GH."
-                        st.text_area("Texte à copier :", lettre, height=200)
-                except Exception as e:
-                    st.error(f"Erreur : {e}")
+                        except Exception as e:
+                            if "429" in str(e) or "quota" in str(e).lower():
+                                continue # Passe au modèle suivant
+                            else:
+                                st.error(f"Erreur technique : {e}")
+                                break
+                
+                if not success:
+                    st.error("❌ Quota dépassé sur tous les modèles. Réessayez dans une minute ou utilisez une autre clé API.")
 
 # --- ONGLET 2 : GESTION ---
 with tab2:
@@ -110,4 +132,5 @@ with tab2:
             st.session_state.df_locataires = df_cur.drop(idx).reset_index(drop=True)
             sauvegarder_donnees(st.session_state.df_locataires)
             st.rerun()
+            
     st.dataframe(st.session_state.df_locataires, use_container_width=True)
