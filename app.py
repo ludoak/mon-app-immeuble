@@ -6,13 +6,14 @@ from PIL import Image
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="GH Diagnostic Pro", layout="wide")
 
-# --- 2. CONFIGURATION DE L'IA (VERSION ULTRA-COMPATIBLE) ---
+# --- 2. CONFIGURATION DE L'IA ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("Clé API manquante !")
+    st.error("⚠️ Clé API manquante dans les Secrets !")
 
-# --- 3. BASE DE DONNÉES LOCATAIRES ---
+# --- 3. BASE DE DONNÉES LOCATAIRES (Tout est ici !) ---
+# Ajoute ou modifie tes locataires directement dans cette liste
 data = {
     "Résidence": ["Canterane", "Canterane", "La Dussaude", "La Dussaude", "Canterane"],
     "Appartement": ["101", "102", "201", "202", "103"],
@@ -22,44 +23,57 @@ df = pd.DataFrame(data)
 
 # --- 4. INTERFACE ---
 st.title("🏢 Assistant Technique GH")
+st.markdown("---")
 
 col1, col2 = st.columns(2)
+
 with col1:
-    res_sel = st.selectbox("📍 Résidence", sorted(df["Résidence"].unique()))
+    st.subheader("📍 Localisation")
+    res_sel = st.selectbox("Sélectionner la Résidence", sorted(df["Résidence"].unique()))
     df_res = df[df["Résidence"] == res_sel]
-    appt_sel = st.selectbox("🚪 N° Appartement", sorted(df_res["Appartement"].unique()))
+    appt_sel = st.selectbox("N° Appartement", sorted(df_res["Appartement"].unique()))
     nom_loc = df_res[df_res["Appartement"] == appt_sel]["Nom"].iloc[0]
-    st.info(f"👤 Locataire : **{nom_loc}**")
+    st.success(f"👤 Locataire actuel : **{nom_loc}**")
 
 with col2:
-    photo = st.file_uploader("📸 Photo", type=["jpg", "png", "jpeg"])
-    note = st.text_area("📝 Description du problème")
+    st.subheader("📸 Signalement")
+    photo = st.file_uploader("Prendre une photo", type=["jpg", "png", "jpeg"])
+    note = st.text_area("Note technique rapide", placeholder="Décris le problème ici...")
 
-# --- 5. LOGIQUE D'ANALYSE (CHANGEMENT DE MODÈLE ICI) ---
-if st.button("🔍 ANALYSER", type="primary", use_container_width=True):
-    with st.spinner("Analyse en cours..."):
-        try:
-            # On change 'gemini-1.5-flash' par 'gemini-pro' (ou 'gemini-1.5-pro')
-            # C'est le modèle le plus robuste
-            model = genai.GenerativeModel('gemini-1.5-pro')
+# --- 5. LOGIQUE D'ANALYSE (SÉCURISÉE) ---
+if st.button("🔍 LANCER L'ANALYSE", type="primary", use_container_width=True):
+    if not photo and not note:
+        st.warning("⚠️ Merci d'ajouter une photo ou une note.")
+    else:
+        with st.spinner("Analyse en cours..."):
+            # On définit la liste des modèles à tester par ordre de préférence
+            # Si le 3-flash-preview échoue, on prend le 1.5-flash
+            modeles_a_tester = ['gemini-3-flash-preview', 'gemini-1.5-flash']
             
-            prompt = f"Expert technique bâtiment. Analyse : {note}. Charge locative ?"
+            reponse_obtenue = False
             
-            if photo:
-                img = Image.open(photo)
-                response = model.generate_content([prompt, img])
-            else:
-                response = model.generate_content(prompt)
+            for nom_modele in modeles_a_tester:
+                if not reponse_obtenue:
+                    try:
+                        model = genai.GenerativeModel(nom_modele)
+                        prompt = f"Expert technique bâtiment GH. Analyse ce problème : {note}. Précise si c'est une charge locative (Décret 87-712)."
+                        
+                        if photo:
+                            img = Image.open(photo)
+                            response = model.generate_content([prompt, img])
+                        else:
+                            response = model.generate_content(prompt)
+                        
+                        st.markdown("---")
+                        st.subheader(f"📋 Rapport (Modèle: {nom_modele})")
+                        st.write(response.text)
+                        reponse_obtenue = True
+                    except Exception as e:
+                        # Si ce modèle échoue, on passe au suivant
+                        continue
             
-            st.success("✅ Diagnostic terminé")
-            st.markdown(response.text)
-            
-        except Exception as e:
-            # SI LE PRO NE MARCHE PAS, ON ESSAIE LE DERNIER RECOURS
-            try:
-                model = genai.GenerativeModel('gemini-pro')
-                response = model.generate_content(f"Expert bâtiment. Problème: {note}")
-                st.write(response.text)
-            except:
-                st.error(f"Erreur persistante : {e}")
-                st.info("Conseil : Vérifie si ta clé API Gemini est bien active sur 'Google AI Studio'.")
+            if not reponse_obtenue:
+                st.error("❌ Impossible de contacter l'IA. Vérifie ta clé API ou réessaie dans quelques instants.")
+
+st.markdown("---")
+st.caption("Application interne GH - Données locataires intégrées")
