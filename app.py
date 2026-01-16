@@ -3,56 +3,87 @@ import pandas as pd
 import google.generativeai as genai
 from PIL import Image
 
-# 1. CONFIGURATION
-st.set_page_config(page_title="GH Diagnostic Pro", layout="wide")
+# --- 1. CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="GH Diagnostic Terrain", layout="wide", initial_sidebar_state="collapsed")
 
-# 2. TON IA GEMINI
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+# --- 2. CONFIGURATION DE L'IA (CLE DANS LES SECRETS) ---
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+else:
+    st.error("⚠️ Erreur : La clé GEMINI_API_KEY est introuvable dans les Secrets Streamlit.")
 
-# 3. TA BASE DE DONNÉES (Écrite directement ici !)
-# Tu peux ajouter ou modifier des noms ici facilement
+# --- 3. BASE DE DONNÉES LOCATAIRES (INTERNE) ---
+# Tu peux modifier cette liste ici même si les locataires changent
 data = {
-    "Résidence": ["Canterane", "Canterane", "La Dussaude", "La Dussaude"],
-    "Appartement": ["101", "102", "201", "202"],
-    "Nom": ["Lolo", "Zezette", "Kiki", "Aniotsbehere"]
+    "Résidence": ["Canterane", "Canterane", "La Dussaude", "La Dussaude", "Canterane"],
+    "Appartement": ["101", "102", "201", "202", "103"],
+    "Nom": ["Lolo", "Zezette", "Kiki", "Aniotsbehere", "Dédé"]
 }
 df = pd.DataFrame(data)
 
-# 4. INTERFACE
-st.title("🏢 Assistant Technique Gironde Habitat")
+# --- 4. INTERFACE UTILISATEUR ---
+st.title("🏢 Assistant Technique GH")
+st.markdown("---")
 
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("📍 Localisation")
-    res_sel = st.selectbox("Choisir la Résidence", df["Résidence"].unique())
+# Zone de sélection du locataire
+with st.container():
+    col1, col2 = st.columns(2)
     
-    # Filtre les appts selon la résidence
-    df_res = df[df["Résidence"] == res_sel]
-    appt_sel = st.selectbox("N° Appartement", df_res["Appartement"])
+    with col1:
+        res_sel = st.selectbox("📍 Résidence", sorted(df["Résidence"].unique()))
+        # Filtrage automatique des appartements selon la résidence choisie
+        df_res = df[df["Résidence"] == res_sel]
+        appt_sel = st.selectbox("🚪 N° Appartement", sorted(df_res["Appartement"].unique()))
     
-    # Trouve le nom
-    nom_loc = df_res[df_res["Appartement"] == appt_sel]["Nom"].iloc[0]
-    st.success(f"👤 Locataire : **{nom_loc}**")
+    with col2:
+        # Récupération automatique du nom
+        nom_loc = df_res[df_res["Appartement"] == appt_sel]["Nom"].iloc[0]
+        st.info(f"👤 Locataire actuel :\n\n**{nom_loc}**")
 
-with col2:
-    st.subheader("📸 Signalement")
-    photo = st.file_uploader("Prendre une photo", type=["jpg", "png", "jpeg"])
-    note = st.text_input("Note rapide (ex: Fuite évier)")
+st.markdown("---")
 
-# 5. ANALYSE IA
-if st.button("🔍 LANCER L'ANALYSE", type="primary", use_container_width=True):
-    with st.spinner("Analyse Gemini en cours..."):
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        prompt = f"Tu es expert pour Gironde Habitat. Analyse : {note}. Rappelle si c'est à la charge du locataire."
-        
-        if photo:
-            img = Image.open(photo)
-            response = model.generate_content([prompt, img])
-        else:
-            response = model.generate_content(prompt)
-            
-        st.markdown("---")
-        st.subheader("📋 Résultat du Diagnostic")
-        st.write(response.text)
+# Zone de diagnostic
+st.subheader("📸 Constat sur place")
+photo = st.file_uploader("Prendre une photo du désordre", type=["jpg", "png", "jpeg"])
+note = st.text_area("Note technique / Description du problème", placeholder="Ex: Traces d'humidité plafond salle de bain...")
+
+# --- 5. LOGIQUE D'ANALYSE ---
+if st.button("🔍 LANCER L'ANALYSE EXPERTE", type="primary", use_container_width=True):
+    if not photo and not note:
+        st.warning("⚠️ Veuillez ajouter au moins une photo ou une description.")
+    else:
+        with st.spinner("Analyse technique en cours (Gemini 1.5 Flash)..."):
+            try:
+                # Utilisation du modèle le plus stable
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                # Prompt d'expertise adapté à Gironde Habitat
+                prompt = f"""
+                Tu agis en tant qu'expert technique pour le bailleur social Gironde Habitat.
+                Analyse le problème suivant : '{note}'.
+                
+                1. Identifie la cause probable du désordre.
+                2. Détermine si la réparation est à la CHARGE DU LOCATAIRE (Entretien courant, Décret n°87-712) 
+                   ou à la CHARGE DU BAILLEUR (Grosse réparation, vétusté).
+                3. Donne un conseil technique rapide pour le technicien sur place.
+                
+                Réponds de manière concise et professionnelle.
+                """
+                
+                if photo:
+                    img = Image.open(photo)
+                    response = model.generate_content([prompt, img])
+                else:
+                    response = model.generate_content(prompt)
+                
+                # Affichage du résultat
+                st.success("✅ Diagnostic terminé")
+                st.markdown("### 📋 Rapport d'analyse IA")
+                st.write(response.text)
+                
+            except Exception as e:
+                st.error(f"❌ Une erreur est survenue avec l'IA : {e}")
+
+# --- PIED DE PAGE ---
+st.markdown("---")
+st.caption("Application interne GH - Vitesse et Efficacité Terrain")
