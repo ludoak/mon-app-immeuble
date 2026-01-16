@@ -16,13 +16,8 @@ url_fiche = st.secrets["connections"]["gsheets"]["spreadsheet"]
 
 # --- CHARGEMENT SÉCURISÉ ---
 try:
-    # On lit le premier onglet disponible
     df_base = conn.read(spreadsheet=url_fiche, ttl=0)
-    
-    # NETTOYAGE : On enlève les espaces vides et on s'assure que les titres sont lisibles
     df_base.columns = [str(c).strip() for c in df_base.columns]
-    
-    # On vérifie si les colonnes essentielles sont là
     colonnes_ok = "Résidence" in df_base.columns and "Nom" in df_base.columns
 except Exception as e:
     st.error(f"Erreur de connexion : {e}")
@@ -31,21 +26,30 @@ except Exception as e:
 
 st.title("🚀 GH Diagnostic Rapide")
 
-if colonnes_ok:
+if colonnes_ok and not df_base.empty:
     tab1, tab2, tab3 = st.tabs(["🔍 Diagnostic", "👥 Gestion Locataires", "📜 Historique"])
 
     with tab1:
         col1, col2 = st.columns(2)
         with col1:
-            res_list = df_base['Résidence'].unique()
+            res_list = sorted(df_base['Résidence'].unique())
             residence = st.selectbox("Sélectionner la Résidence", res_list)
+            
+            # On filtre la base par résidence
             df_res = df_base[df_base['Résidence'] == residence]
             
             appts = sorted(df_res['Appartement'].astype(str).unique())
             appt_sel = st.selectbox("N° Appartement", appts)
             
-            nom_loc = df_res[df_res['Appartement'].astype(str) == appt_sel]['Nom'].iloc[0]
-            st.success(f"👤 Locataire : **{nom_loc}**")
+            # --- CORRECTION DE L'ERREUR INDEXERROR ---
+            df_sel = df_res[df_res['Appartement'].astype(str) == appt_sel]
+            
+            if not df_sel.empty:
+                nom_loc = df_sel['Nom'].iloc[0]
+                st.success(f"👤 Locataire : **{nom_loc}**")
+            else:
+                nom_loc = "Inconnu"
+                st.warning("⚠️ Aucun locataire trouvé pour cet appartement.")
 
         with col2:
             foto = st.file_uploader("📸 Photo", type=["jpg", "png", "jpeg"])
@@ -53,20 +57,24 @@ if colonnes_ok:
 
         if st.button("🔍 ANALYSER", type="primary", use_container_width=True):
             with st.spinner("Analyse Gemini 3..."):
-                model = genai.GenerativeModel('gemini-3-flash-preview')
-                prompt = f"Expert GH. Analyse : {note}. Charge locative ?"
-                res = model.generate_content([prompt, Image.open(foto)] if foto else prompt)
-                st.info(res.text)
-                
-                # Tentative d'historique (silencieuse si l'onglet manque)
                 try:
-                    df_h = conn.read(spreadsheet=url_fiche, worksheet="Historique", ttl=0)
-                    n_ligne = pd.DataFrame([[datetime.now().strftime("%d/%m/%Y"), f"{residence}-{appt_sel}", nom_loc, res.text]], columns=df_h.columns)
-                    df_h = pd.concat([df_h, n_ligne], ignore_index=True)
-                    conn.update(spreadsheet=url_fiche, worksheet="Historique", data=df_h)
-                except:
-                    pass
+                    model = genai.GenerativeModel('gemini-3-flash-preview')
+                    prompt = f"Expert GH. Analyse : {note}. Précise les charges locatives."
+                    res = model.generate_content([prompt, Image.open(foto)] if foto else prompt)
+                    st.info(res.text)
+                    
+                    # Enregistrement Historique
+                    try:
+                        df_h = conn.read(spreadsheet=url_fiche, worksheet="Historique", ttl=0)
+                        n_ligne = pd.DataFrame([[datetime.now().strftime("%d/%m/%Y %H:%M"), f"{residence}-{appt_sel}", nom_loc, res.text]], columns=df_h.columns)
+                        df_h = pd.concat([df_h, n_ligne], ignore_index=True)
+                        conn.update(spreadsheet=url_fiche, worksheet="Historique", data=df_h)
+                    except:
+                        st.write("Note: Impossible de mettre à jour l'historique.")
+                except Exception as e:
+                    st.error(f"Erreur IA : {e}")
 
+    # --- TAB GESTION & HISTORIQUE (Restent identiques) ---
     with tab2:
         st.subheader("Ajouter un locataire")
         with st.form("add"):
@@ -78,21 +86,17 @@ if colonnes_ok:
             if st.form_submit_button("Enregistrer"):
                 new_row = pd.DataFrame([[r,b,a,n]], columns=df_base.columns[:4])
                 df_base = pd.concat([df_base, new_row], ignore_index=True)
-                conn.update(spreadsheet=url_fiche, data=df_base)
+                conn.update(spreadsheet=url_fiche, worksheet="Base_Locataires", data=df_base)
                 st.rerun()
 
     with tab3:
         try:
             df_hist = conn.read(spreadsheet=url_fiche, worksheet="Historique", ttl=0)
-            st.dataframe(df_hist, use_container_width=True)
+            st.dataframe(df_hist.sort_index(ascending=False), use_container_width=True)
         except:
-            st.write("Onglet 'Historique' non détecté.")
+            st.write("Aucun historique détecté.")
 
 else:
-    # --- MODE DEBUG SI CA NE MARCHE PAS ---
-    st.warning("⚠️ Problème de format détecté.")
-    st.write("Voici les titres que l'IA voit actuellement dans votre fichier :")
-    st.code(list(df_base.columns))
-    st.write("Aperçu de vos données :")
-    st.dataframe(df_base.head())
-    st.info("💡 CONSEIL : Vérifiez que vos titres en ligne 1 sont exactement : Résidence, Bâtiment, Appartement, Nom")
+    st.warning("⚠️ En attente des données GSheets...")
+    if not df_base.empty:
+        st.write("Colonnes détectées :", list(df_base.columns))
