@@ -38,15 +38,12 @@ PRESTATAIRES = {
     "Chaudière / Thermostat / Chauffe-eau": "LOGISTA HOMETECH",
     "DAAF (Détecteur fumée)": "LOGISTA HOMETECH",
     "Chauffage Collectif": "COMAINTEF",
-    "Assainissement (Conduites)": "ACS",
-    "Encombrants": "Atelier-Remuménage",
-    "Platines / Interphonie": "COUTAREL",
     "Menuiserie / Serrurerie / Portes": "GIRONDE HABITAT (Régie)",
     "Électricité (Prises/Tableau)": "GIRONDE HABITAT (Régie)",
     "Autre": "À PRÉCISER"
 }
 
-# --- 3. INTERFACE UTILISATEUR ---
+# --- 3. INTERFACE ---
 st.subheader("🛠️ Plateforme de signalement Gironde Habitat")
 
 with st.container(border=True):
@@ -57,7 +54,7 @@ with st.container(border=True):
             st.image(source_photo, caption="Image sélectionnée", width=300)
             
     with col_in2:
-        notes = st.text_input("🗒️ Notes / Observations terrain", placeholder="Ex: Joint de douche noirci...")
+        notes = st.text_input("🗒️ Notes / Observations terrain", placeholder="Ex: Moisissures sur les joints...")
         type_inter = st.selectbox("Type d'intervention", list(PRESTATAIRES.keys()))
         lancer_analyse = st.button("🔍 LANCER L'ANALYSE TECHNIQUE", type="primary", use_container_width=True)
 
@@ -96,18 +93,15 @@ if lancer_analyse:
     if source_photo or notes:
         with st.spinner("Analyse technique en cours..."):
             try:
-                # CORRECTION ICI : Utilisation de gemini-1.5-flash sans prefixe models/
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                # ESSAI AVEC LA VERSION LA PLUS RÉCENTE DU MODÈLE
+                model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 
                 prompt = f"""Tu es l'inspecteur expert technique de Gironde Habitat. 
                 Analyse les notes : '{notes}' et l'image fournie.
-                
                 RÈGLES :
-                - MOISISSURES/JOINTS : Si visible = Entretien locataire.
-                - Si c'est un cas locatif, insère obligatoirement : '{phrase_locatif}'.
-                
-                Format de réponse :
-                Bonjour, [Diagnostic technique visuel] + [Responsabilité]. Cordialement."""
+                - MOISISSURES/JOINTS : Entretien locataire.
+                - Si c'est locatif, ajoute : '{phrase_locatif}'.
+                Format : Bonjour, [Diagnostic] + [Responsabilité], Cordialement."""
                 
                 if source_photo:
                     img = Image.open(source_photo)
@@ -116,13 +110,17 @@ if lancer_analyse:
                     response = model.generate_content(prompt)
                 objet_ia = response.text
             except Exception as e:
-                # Tentative avec un nom de modèle alternatif si le premier échoue
+                # DEUXIÈME CHANCE SI ERREUR 404
                 try:
-                    model = genai.GenerativeModel('gemini-pro')
-                    response = model.generate_content(prompt)
+                    model = genai.GenerativeModel('gemini-1.5-pro-latest')
+                    if source_photo:
+                        img = Image.open(source_photo)
+                        response = model.generate_content([prompt, img])
+                    else:
+                        response = model.generate_content(prompt)
                     objet_ia = response.text
-                except:
-                    objet_ia = f"Erreur de connexion au modèle : {str(e)}"
+                except Exception as e2:
+                    objet_ia = f"Erreur de modèle persistante : {str(e2)}"
     else:
         st.warning("⚠️ Ajoutez une photo ou une observation.")
 
