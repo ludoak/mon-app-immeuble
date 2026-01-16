@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="GH Diagnostic & Courrier", layout="wide")
+st.set_page_config(page_title="GH Diagnostic Auto", layout="wide")
 
 # --- 2. CONFIGURATION DE L'IA ---
 if "GEMINI_API_KEY" in st.secrets:
@@ -22,92 +22,94 @@ data = {
 df = pd.DataFrame(data)
 
 # --- 4. INTERFACE ---
-st.title("🚀 GH Diagnostic & Signalement")
+st.title("🚀 GH Auto-Signalement")
+st.caption("Analyse automatique par photo - Modèle : gemini-3-flash-preview")
 st.markdown("---")
 
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📍 Localisation")
-    res_sel = st.selectbox("Sélectionner la Résidence", sorted(df["Résidence"].unique()))
+    res_sel = st.selectbox("Résidence", sorted(df["Résidence"].unique()))
     df_res = df[df["Résidence"] == res_sel]
-    appt_sel = st.selectbox("N° Appartement", sorted(df_res["Appartement"].unique()))
+    appt_sel = st.selectbox("Appartement", sorted(df_res["Appartement"].unique()))
     nom_loc = df_res[df_res["Appartement"] == appt_sel]["Nom"].iloc[0]
-    st.success(f"👤 Locataire : **{nom_loc}**")
+    st.info(f"👤 Locataire : **{nom_loc}**")
 
 with col2:
-    st.subheader("📸 Constat")
-    photo = st.file_uploader("Photo du désordre", type=["jpg", "png", "jpeg"])
-    note = st.text_area("Description rapide pour la plateforme")
+    st.subheader("📸 Preuve visuelle")
+    photo = st.file_uploader("Prendre/Joindre la photo", type=["jpg", "png", "jpeg"])
+    # Note optionnelle au cas où tu veuilles préciser un détail, mais pas obligatoire
+    note_facultative = st.text_input("Détail supplémentaire (facultatif)")
 
-# --- 5. ANALYSE ET GÉNÉRATION ---
-if st.button("🔍 ANALYSER ET PRÉPARER LE COURRIER", type="primary", use_container_width=True):
-    if not note:
-        st.warning("⚠️ Décrivez le problème pour générer le rapport.")
+# --- 5. LOGIQUE D'ANALYSE AUTOMATIQUE ---
+if st.button("🔍 GÉNÉRER LE RAPPORT ET LA LETTRE", type="primary", use_container_width=True):
+    if not photo:
+        st.warning("⚠️ Merci de prendre une photo pour lancer l'analyse automatique.")
     else:
-        with st.spinner("Analyse par gemini-3-flash-preview..."):
+        with st.spinner("L'IA examine la photo et prépare tout..."):
             try:
                 model = genai.GenerativeModel('gemini-3-flash-preview')
                 
-                # Prompt pour l'analyse technique + décision de charge
-                prompt_analyse = f"""
-                En tant qu'expert technique GH, analyse ce problème : '{note}'.
-                1. Détermine la nature du problème.
-                2. Décide si c'est : 'CHARGE LOCATIVE', 'CHARGE GH' ou 'CHARGE PRESTATAIRE'.
-                3. Justifie brièvement.
+                # Le Prompt qui force l'IA à TOUT faire
+                prompt_global = f"""
+                Tu es l'expert technique de Gironde Habitat.
+                Regarde cette photo et :
+                1. Décris précisément le problème technique constaté.
+                2. Détermine le type de charge : 'CHARGE LOCATIVE', 'CHARGE GH' ou 'CHARGE PRESTATAIRE'.
+                3. Justifie selon les règles d'entretien des logements sociaux.
+                
+                Informations complémentaires si fournies : {note_facultative}
                 """
                 
-                if photo:
-                    img = Image.open(photo)
-                    res = model.generate_content([prompt_analyse, img])
-                else:
-                    res = model.generate_content(prompt_analyse)
+                img = Image.open(photo)
+                res = model.generate_content([prompt_global, img])
+                reponse_ia = res.text
                 
-                # --- AFFICHAGE DU RÉSULTAT ---
+                # --- AFFICHAGE DE LA CHARGE ---
                 st.markdown("---")
+                type_charge = "🏢 CHARGE GH" # Par défaut
+                if "LOCATIVE" in reponse_ia.upper(): type_charge = "🛠️ CHARGE LOCATIVE"
+                elif "PRESTATAIRE" in reponse_ia.upper(): type_charge = "🏗️ CHARGE PRESTATAIRE"
                 
-                # Bloc "Type de Charge" bien visible
-                analyse_texte = res.text
-                type_charge = "À DÉTERMINER"
-                if "LOCATIVE" in analyse_texte.upper(): type_charge = "🛠️ CHARGE LOCATIVE"
-                elif "PRESTATAIRE" in analyse_texte.upper(): type_charge = "🏗️ CHARGE PRESTATAIRE"
-                else: type_charge = "🏢 CHARGE GH (Bailleur)"
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    st.metric("TYPE DE CHARGE", type_charge)
+                with c2:
+                    st.subheader("📋 Analyse Technique")
+                    st.write(reponse_ia)
                 
-                st.metric(label="Décision de prise en charge :", value=type_charge)
-                
-                st.subheader("📋 Rapport Technique")
-                st.write(analyse_texte)
-                
-                # --- GÉNÉRATION DE LA LETTRE ---
+                # --- GÉNÉRATION AUTOMATIQUE DU COURRIER ---
                 st.markdown("---")
-                st.subheader("✉️ Modèle de courrier pour la plateforme")
+                st.subheader("✉️ Courrier prêt à l'envoi")
                 
                 date_jour = datetime.now().strftime("%d/%m/%Y")
                 
-                lettre = f"""
-                OBJET : Signalement technique - Résidence {res_sel} - Appt {appt_sel}
-                DATE : {date_jour}
+                # On demande à l'IA de résumer le problème en une phrase pour l'objet
+                prompt_lettre = f"Résume ce problème technique en 5 mots maximum pour un objet de mail : {reponse_ia}"
+                objet_court = model.generate_content(prompt_lettre).text
                 
-                Madame, Monsieur,
-                
-                Je vous informe d'un désordre technique constaté ce jour dans le logement de M./Mme {nom_loc} (Appt {appt_sel}) au sein de la résidence {res_sel}.
-                
-                Description du problème : 
-                {note}
-                
-                Après diagnostic sur place, ce désordre semble relever d'une : {type_charge}.
-                
-                Merci de faire le nécessaire pour déclencher l'intervention ou informer le locataire de ses obligations.
-                
-                Cordialement,
-                L'équipe technique GH.
-                """
-                
-                st.text_area("Copiez le texte ci-dessous :", lettre, height=300)
-                st.info("💡 Vous pouvez copier ce texte et l'envoyer directement par mail ou sur la plateforme technique.")
+                lettre = f"""OBJET : {objet_court.strip()} - {res_sel} / Appt {appt_sel}
+DATE : {date_jour}
+
+Madame, Monsieur,
+
+Lors d'une visite à la résidence {res_sel}, j'ai constaté le désordre suivant dans le logement de M./Mme {nom_loc} (Appt {appt_sel}) :
+
+{reponse_ia.split('.')[0]}.
+
+Après diagnostic visuel, ce désordre est classé en : {type_charge}.
+
+Merci de prendre les dispositions nécessaires.
+
+Cordialement,
+L'équipe technique GH."""
+
+                st.text_area("Copier pour la plateforme :", lettre, height=250)
+                st.button("✅ Copié dans le presse-papier (Simulation)") # Note : Streamlit ne permet pas le vrai copier-coller auto sans composants complexes
                 
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                st.error(f"Erreur d'analyse : {e}")
 
 st.markdown("---")
-st.caption("Application Terrain GH - Expertise Instantanée")
+st.caption("GH-Auto-Pilot : Plus rien à saisir, l'IA s'occupe de tout.")
