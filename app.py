@@ -1,55 +1,58 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 import google.generativeai as genai
 from PIL import Image
-from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="GH Diagnostic", layout="wide")
+# 1. CONFIGURATION
+st.set_page_config(page_title="GH Diagnostic Pro", layout="wide")
 
-# IA Gemini
+# 2. TON IA GEMINI
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# Connexion stable
-conn = st.connection("gsheets", type=GSheetsConnection)
-url_fiche = st.secrets["connections"]["gsheets"]["spreadsheet"]
+# 3. TA BASE DE DONNÉES (Écrite directement ici !)
+# Tu peux ajouter ou modifier des noms ici facilement
+data = {
+    "Résidence": ["Canterane", "Canterane", "La Dussaude", "La Dussaude"],
+    "Appartement": ["101", "102", "201", "202"],
+    "Nom": ["Lolo", "Zezette", "Kiki", "Aniotsbehere"]
+}
+df = pd.DataFrame(data)
 
-# Chargement simplifié : on lit le premier onglet disponible
-try:
-    df_base = conn.read(spreadsheet=url_fiche, ttl=0)
-    df_base.columns = [str(c).strip() for c in df_base.columns]
-    erreur = False
-except Exception as e:
-    st.error(f"Erreur de connexion : {e}")
-    erreur = True
+# 4. INTERFACE
+st.title("🏢 Assistant Technique Gironde Habitat")
 
-st.title("🚀 GH Diagnostic Rapide")
+col1, col2 = st.columns(2)
 
-if not erreur and not df_base.empty:
-    col1, col2 = st.columns(2)
-    with col1:
-        # On utilise tes colonnes : Résidence, Bâtiment, Appartement, Nom
-        res = st.selectbox("Résidence", df_base['Résidence'].unique())
-        df_res = df_base[df_base['Résidence'] == res]
+with col1:
+    st.subheader("📍 Localisation")
+    res_sel = st.selectbox("Choisir la Résidence", df["Résidence"].unique())
+    
+    # Filtre les appts selon la résidence
+    df_res = df[df["Résidence"] == res_sel]
+    appt_sel = st.selectbox("N° Appartement", df_res["Appartement"])
+    
+    # Trouve le nom
+    nom_loc = df_res[df_res["Appartement"] == appt_sel]["Nom"].iloc[0]
+    st.success(f"👤 Locataire : **{nom_loc}**")
+
+with col2:
+    st.subheader("📸 Signalement")
+    photo = st.file_uploader("Prendre une photo", type=["jpg", "png", "jpeg"])
+    note = st.text_input("Note rapide (ex: Fuite évier)")
+
+# 5. ANALYSE IA
+if st.button("🔍 LANCER L'ANALYSE", type="primary", use_container_width=True):
+    with st.spinner("Analyse Gemini en cours..."):
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        appts = sorted(df_res['Appartement'].astype(str).unique())
-        appt_sel = st.selectbox("Appartement", appts)
+        prompt = f"Tu es expert pour Gironde Habitat. Analyse : {note}. Rappelle si c'est à la charge du locataire."
         
-        nom_loc = df_res[df_res['Appartement'].astype(str) == appt_sel]['Nom'].iloc[0]
-        st.success(f"👤 Locataire : **{nom_loc}**")
-
-    with col2:
-        note = st.text_input("🗒️ Note terrain")
-        if st.button("🔍 ANALYSER", type="primary"):
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            res_ia = model.generate_content(f"Expert GH. Analyse : {note}")
-            st.info(res_ia.text)
+        if photo:
+            img = Image.open(photo)
+            response = model.generate_content([prompt, img])
+        else:
+            response = model.generate_content(prompt)
             
-            # Sauvegarde historique simplifiée
-            try:
-                n_ligne = pd.DataFrame([[datetime.now().strftime("%d/%m/%Y"), res, nom_loc, res_ia.text]], columns=["Date", "Lieu", "Locataire", "Diagnostic"])
-                conn.update(spreadsheet=url_fiche, worksheet="Historique", data=n_ligne)
-                st.toast("Enregistré dans l'Historique")
-            except: pass
-else:
-    st.warning("⚠️ Vérifiez que votre lien dans les secrets est le lien DIRECT (pas /pub).")
+        st.markdown("---")
+        st.subheader("📋 Résultat du Diagnostic")
+        st.write(response.text)
