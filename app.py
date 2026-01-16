@@ -8,16 +8,20 @@ from streamlit_gsheets import GSheetsConnection
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="ImmoCheck GH Pro", page_icon="🏢", layout="wide")
 
-# Récupération de la clé API
-if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-else:
-    st.error("⚠️ Clé API manquante dans les Secrets Streamlit.")
+# Récupération sécurisée de la clé API
+api_key = st.secrets.get("GEMINI_API_KEY")
 
+if api_key:
+    genai.configure(api_key=api_key)
+else:
+    st.error("❌ La clé GEMINI_API_KEY est manquante dans les Secrets de Streamlit.")
+
+# Connexion à Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def charger_donnees():
     try:
+        # Lecture de l'onglet Base_Locataires
         data = conn.read(worksheet="Base_Locataires", ttl=0)
         data.columns = data.columns.str.strip()
         if 'Appartement' in data.columns:
@@ -35,25 +39,29 @@ PRESTATAIRES = {
     "Chaudière / Thermostat / Chauffe-eau": "LOGISTA HOMETECH",
     "DAAF (Détecteur fumée)": "LOGISTA HOMETECH",
     "Chauffage Collectif": "COMAINTEF",
+    "Assainissement (Conduites)": "ACS",
+    "Encombrants": "Atelier-Remuménage",
+    "Platines / Interphonie": "COUTAREL",
     "Menuiserie / Serrurerie / Portes": "GIRONDE HABITAT (Régie)",
     "Électricité (Prises/Tableau)": "GIRONDE HABITAT (Régie)",
     "Autre": "À PRÉCISER"
 }
 
-# --- 3. INTERFACE ---
+# --- 3. INTERFACE UTILISATEUR ---
 st.subheader("🛠️ Plateforme de signalement Gironde Habitat")
 
 with st.container(border=True):
     col_in1, col_in2 = st.columns([1, 1.5])
     with col_in1:
-        # Option Caméra ou Galerie
+        # Permet de prendre une photo ou d'en choisir une dans la galerie
         source_photo = st.file_uploader("📸 Photo (Caméra ou Galerie)", type=["jpg", "jpeg", "png"])
         if source_photo:
             st.image(source_photo, caption="Image sélectionnée", width=300)
             
     with col_in2:
-        notes = st.text_input("🗒️ Notes / Observations terrain", key="notes_brutes")
+        notes = st.text_input("🗒️ Notes / Observations terrain", placeholder="Ex: Joint de douche noirci...")
         type_inter = st.selectbox("Type d'intervention", list(PRESTATAIRES.keys()))
+        # Bouton pour déclencher l'IA
         lancer_analyse = st.button("🔍 LANCER L'ANALYSE TECHNIQUE", type="primary", use_container_width=True)
 
 with st.expander("📍 Lieu et Locataire", expanded=True):
@@ -81,25 +89,35 @@ with st.expander("📍 Lieu et Locataire", expanded=True):
             nom_locataire = "Gironde Habitat (Communs)"
 
     with col2:
-        nom = st.text_input("Nom affiché", value=nom_locataire)
+        nom = st.text_input("Nom affiché sur le rapport", value=nom_locataire)
 
-# --- 4. LOGIQUE IA ---
+# --- 4. LOGIQUE D'ANALYSE IA ---
 objet_ia = ""
-phrase_locatif = "Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire."
+phrase_locatif = "Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire (Décret n°87-712)."
 
 if lancer_analyse:
     if source_photo or notes:
-        with st.spinner("Analyse technique en cours..."):
+        with st.spinner("Analyse technique par l'IA en cours..."):
             try:
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                prompt = f"""Tu es l'inspecteur expert GH. 
-                Notes : '{notes}'.
-                Si tu vois des MOISISSURES, des JOINTS NOIRS ou des VITRES CASSÉES :
-                - Explique que c'est un défaut d'entretien ou une dégradation.
-                - Ajoute obligatoirement : '{phrase_locatif}'.
-                - Adresse-toi au locataire poliment.
                 
-                Bonjour, [Diagnostic précis de l'image] + [Responsabilité], Cordialement."""
+                # Prompt d'expertise technique spécialisé Gironde Habitat
+                prompt = f"""Tu es l'inspecteur expert technique de Gironde Habitat. 
+                Analyse les notes : '{notes}' et l'image fournie.
+                
+                RÈGLES DE CHARGE LOCATIVE (ORANGE) :
+                - MOISISSURES : Si visibles sur joints ou parois = Défaut d'entretien ou manque d'aération.
+                - JOINTS : Silicone noirci, décollé ou fuyant = Entretien locataire.
+                - VITRES/POIGNÉES : Cassées ou arrachées = Dégradation.
+                
+                CONSIGNE :
+                1. Identifie précisément le problème technique.
+                2. Si c'est un cas 'Orange', insère obligatoirement : '{phrase_locatif}'.
+                3. Propose une solution (ex: nettoyer avec du vinaigre/javel ou refaire le joint).
+                4. Sois poli, professionnel et rigoureux.
+
+                Format de réponse :
+                Bonjour, [Diagnostic technique] + [Responsabilité]. Cordialement."""
                 
                 if source_photo:
                     img = Image.open(source_photo)
@@ -108,14 +126,20 @@ if lancer_analyse:
                     response = model.generate_content(prompt)
                 objet_ia = response.text
             except Exception as e:
-                objet_ia = f"Erreur technique : {e}"
+                objet_ia = f"Désolé, une erreur est survenue lors de l'analyse : {str(e)}"
     else:
-        st.warning("⚠️ Veuillez d'abord ajouter une photo ou une note.")
+        st.warning("⚠️ Merci d'ajouter une photo ou une observation avant de lancer l'analyse.")
 
 st.divider()
-st.subheader("🔍 Analyse de l'Inspecteur IA")
-constat_final = st.text_area("Rapport détaillé :", value=objet_ia, height=300)
+st.subheader("🔍 Rapport de l'Inspecteur IA")
+constat_final = st.text_area("Résultat de l'analyse :", value=objet_ia, height=300)
 
 # --- 5. ACTIONS ---
-if st.button("📑 GÉNÉRER LE RAPPORT"):
-    st.code(f"🏢 SIGNALEMENT GH\n👤 NOM : {nom}\n📍 LIEU : {lieu_ia}\n\n{objet_ia}")
+col_b1, col_b2 = st.columns(2)
+with col_b1:
+    if st.button("📑 GÉNÉRER LE RAPPORT FINAL"):
+        st.code(f"🏢 SIGNALEMENT GIRONDE HABITAT\n👤 CONCERNÉ : {nom}\n📍 LIEU : {lieu_ia}\n📅 DATE : {date.today()}\n\n{objet_ia}", language="text")
+
+with col_b2:
+    if st.button("🧹 REPARTIR À ZÉRO"):
+        st.rerun()
