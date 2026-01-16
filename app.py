@@ -40,17 +40,23 @@ PRESTATAIRES = {
     "Autre": "À PRÉCISER"
 }
 
-# --- 3. INTERFACE (DOIT ÊTRE AVANT L'ANALYSE) ---
+# --- 3. INTERFACE ---
 st.subheader("🛠️ Plateforme de signalement Gironde Habitat")
 
 with st.container(border=True):
     col_in1, col_in2 = st.columns([1, 1.5])
     with col_in1:
-        photo = st.camera_input("📸 Prendre une photo")
+        # CHANGEMENT ICI : Permet l'appareil photo OU la galerie
+        source_photo = st.file_uploader("📸 Photo (Caméra ou Galerie)", type=["jpg", "jpeg", "png"])
+        if source_photo:
+            st.image(source_photo, width=200)
+            
     with col_in2:
-        notes = st.text_input("🗒️ Notes (ex: joint de douche noirci, vitre cassée...)", key="notes_brutes")
+        notes = st.text_input("🗒️ Notes / Observations", key="notes_brutes")
         type_inter = st.selectbox("Type d'intervention", list(PRESTATAIRES.keys()))
-        entreprise = PRESTATAIRES.get(type_inter)
+        
+        # AJOUT DU BOUTON DE VALIDATION
+        lancer_analyse = st.button("🔍 LANCER L'ANALYSE TECHNIQUE", type="primary", use_container_width=True)
 
 with st.expander("📍 Lieu et Locataire", expanded=True):
     col1, col2 = st.columns(2)
@@ -79,49 +85,40 @@ with st.expander("📍 Lieu et Locataire", expanded=True):
     with col2:
         nom = st.text_input("Nom affiché", value=nom_locataire)
 
-# --- 4. LOGIQUE IA EXPERTE (ANALYSE VISUELLE) ---
+# --- 4. LOGIQUE IA ---
 objet_ia = ""
 phrase_locatif = "Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire."
 
-if notes or photo:
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        prompt = f"""Tu es l'inspecteur technique expert de Gironde Habitat. 
-        Analyse la photo et les notes : '{notes}'.
-        
-        CRITÈRES GH :
-        - Orange (Locataire) : Joints (douche/évier) noircis ou décollés, Vitres cassées, Poignées/Serrures, Calcaire.
-        - Bleu (GH) : Prises (usure), Radiateurs, Cadres portes.
-        - Vert (Prestataire) : VMC, Chaudière, DAAF.
+# L'IA ne travaille QUE si on appuie sur le bouton
+if lancer_analyse:
+    if source_photo or notes:
+        with st.spinner("Analyse en cours..."):
+            try:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                prompt = f"""Expert technique GH. Analyse la photo et les notes : '{notes}'.
+                CRITÈRES :
+                - Orange (Locataire) : Joints moisis/noirs, moisissures de surface, calcaire, vitres cassées, poignées.
+                - Bleu (GH) : Prises, Interphone, Radiateurs.
+                - Vert (Prestataire) : VMC, Chaudière.
 
-        INSTRUCTIONS :
-        1. Décris précisément ce que tu vois sur l'image (couleur du joint, état de la prise, etc).
-        2. Si c'est locatif (Orange), ajoute obligatoirement : '{phrase_locatif}'.
-        3. Corrige l'orthographe des notes.
-        
-        Bonjour,
-        [Diagnostic technique] + [Responsabilité]
-        Cordialement"""
-        
-        if photo:
-            img = Image.open(photo)
-            response = model.generate_content([prompt, img])
-        else:
-            response = model.generate_content(prompt)
-            
-        objet_ia = response.text
-    except Exception as e:
-        objet_ia = f"Bonjour,\n\nUne anomalie a été constatée concernant : {notes}.\n\nmerci\ncordialement"
+                SI ORANGE : Ajoute obligatoirement : '{phrase_locatif}'.
+                Bonjour, [Diagnostic technique visuel] + [Responsabilité], Cordialement."""
+                
+                if source_photo:
+                    img = Image.open(source_photo)
+                    response = model.generate_content([prompt, img])
+                else:
+                    response = model.generate_content(prompt)
+                objet_ia = response.text
+            except Exception as e:
+                objet_ia = f"Erreur : {e}"
+    else:
+        st.error("Veuillez ajouter une photo ou des notes avant de lancer l'analyse.")
 
 st.divider()
 st.subheader("🔍 Analyse de l'Inspecteur IA")
 constat_final = st.text_area("Rapport détaillé :", value=objet_ia, height=300)
 
 # --- 5. ACTIONS ---
-col_b1, col_b2 = st.columns(2)
-if col_b1.button("📑 GÉNÉRER LE RAPPORT"):
+if st.button("📑 GÉNÉRER LE RAPPORT"):
     st.code(f"🏢 SIGNALEMENT GH\n👤 NOM : {nom}\n📍 LIEU : {lieu_ia}\n\n{objet_ia}")
-
-if col_b2.button("🧹 NETTOYER"):
-    st.rerun()
