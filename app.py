@@ -3,43 +3,27 @@ import requests
 
 st.set_page_config(page_title="ImmoCheck GH", page_icon="🏢")
 
-# 1. Récupération de la clé
 api_key = st.secrets.get("GEMINI_API_KEY")
 
-def test_connexion_directe(key):
-    # On utilise l'URL v1 stable et le modèle gemini-1.5-flash
-    # C'est l'URL officielle de 2026
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key}"
+def diagnostic_ultime(note, key):
+    # On tente l'URL la plus simple possible chez Google
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={key}"
     
     payload = {
-        "contents": [{"parts": [{"text": "Réponds 'OK' si tu reçois ce message."}]}]
+        "contents": [{"parts": [{"text": f"Expert technique GH. Analyse : {note}. Phrase obligatoire : 'Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire.'"}]}]
     }
     
-    response = requests.post(url, json=payload)
-    return response
+    return requests.post(url, json=payload)
 
-st.title("🏢 Système de Secours GH")
+st.title("🏢 Diagnostic GH - Mode Survie")
 
-if not api_key:
-    st.error("Clé API manquante dans les Secrets.")
-else:
-    st.success("Clé API détectée.")
+note = st.text_input("Description du problème :")
 
-    note = st.text_input("Décrivez le problème technique :")
-
-    if st.button("LANCER L'ANALYSE"):
-        with st.spinner("Tentative de connexion directe..."):
-            res = test_connexion_directe(api_key)
-            data = res.json()
-            
-            if res.status_code == 200:
-                st.success("CONNEXION RÉUSSIE !")
-                # Si la connexion marche, on demande le diagnostic
-                url_diag = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-                prompt = f"Tu es expert technique GH. Analyse : {note}. Phrase obligatoire : 'Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire.'"
-                payload_diag = {"contents": [{"parts": [{"text": prompt}]}]}
-                res_diag = requests.post(url_diag, json=payload_diag)
-                st.write(res_diag.json()['candidates'][0]['content']['parts'][0]['text'])
-            else:
-                st.error(f"Erreur {res.status_code}")
-                st.json(data) # Ceci va nous dire EXACTEMENT ce qui ne va pas
+if st.button("LANCER"):
+    res = diagnostic_ultime(note, api_key)
+    if res.status_code == 200:
+        st.success("ENFIN !")
+        st.write(res.json()['candidates'][0]['content']['parts'][0]['text'])
+    else:
+        st.error(f"Erreur {res.status_code}")
+        st.json(res.json())
