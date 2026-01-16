@@ -8,8 +8,11 @@ from streamlit_gsheets import GSheetsConnection
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="ImmoCheck GH Pro", page_icon="🏢", layout="wide")
 
+# Récupération de la clé API
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+else:
+    st.error("⚠️ Clé API manquante dans les Secrets Streamlit.")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -32,9 +35,6 @@ PRESTATAIRES = {
     "Chaudière / Thermostat / Chauffe-eau": "LOGISTA HOMETECH",
     "DAAF (Détecteur fumée)": "LOGISTA HOMETECH",
     "Chauffage Collectif": "COMAINTEF",
-    "Assainissement (Conduites)": "ACS",
-    "Encombrants": "Atelier-Remuménage",
-    "Platines / Interphonie": "COUTAREL",
     "Menuiserie / Serrurerie / Portes": "GIRONDE HABITAT (Régie)",
     "Électricité (Prises/Tableau)": "GIRONDE HABITAT (Régie)",
     "Autre": "À PRÉCISER"
@@ -46,16 +46,14 @@ st.subheader("🛠️ Plateforme de signalement Gironde Habitat")
 with st.container(border=True):
     col_in1, col_in2 = st.columns([1, 1.5])
     with col_in1:
-        # CHANGEMENT ICI : Permet l'appareil photo OU la galerie
+        # Option Caméra ou Galerie
         source_photo = st.file_uploader("📸 Photo (Caméra ou Galerie)", type=["jpg", "jpeg", "png"])
         if source_photo:
-            st.image(source_photo, width=200)
+            st.image(source_photo, caption="Image sélectionnée", width=300)
             
     with col_in2:
-        notes = st.text_input("🗒️ Notes / Observations", key="notes_brutes")
+        notes = st.text_input("🗒️ Notes / Observations terrain", key="notes_brutes")
         type_inter = st.selectbox("Type d'intervention", list(PRESTATAIRES.keys()))
-        
-        # AJOUT DU BOUTON DE VALIDATION
         lancer_analyse = st.button("🔍 LANCER L'ANALYSE TECHNIQUE", type="primary", use_container_width=True)
 
 with st.expander("📍 Lieu et Locataire", expanded=True):
@@ -89,20 +87,19 @@ with st.expander("📍 Lieu et Locataire", expanded=True):
 objet_ia = ""
 phrase_locatif = "Ce remplacement relève de l'entretien courant et des menues réparations, il est donc à la charge exclusive du locataire."
 
-# L'IA ne travaille QUE si on appuie sur le bouton
 if lancer_analyse:
     if source_photo or notes:
-        with st.spinner("Analyse en cours..."):
+        with st.spinner("Analyse technique en cours..."):
             try:
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                prompt = f"""Expert technique GH. Analyse la photo et les notes : '{notes}'.
-                CRITÈRES :
-                - Orange (Locataire) : Joints moisis/noirs, moisissures de surface, calcaire, vitres cassées, poignées.
-                - Bleu (GH) : Prises, Interphone, Radiateurs.
-                - Vert (Prestataire) : VMC, Chaudière.
-
-                SI ORANGE : Ajoute obligatoirement : '{phrase_locatif}'.
-                Bonjour, [Diagnostic technique visuel] + [Responsabilité], Cordialement."""
+                prompt = f"""Tu es l'inspecteur expert GH. 
+                Notes : '{notes}'.
+                Si tu vois des MOISISSURES, des JOINTS NOIRS ou des VITRES CASSÉES :
+                - Explique que c'est un défaut d'entretien ou une dégradation.
+                - Ajoute obligatoirement : '{phrase_locatif}'.
+                - Adresse-toi au locataire poliment.
+                
+                Bonjour, [Diagnostic précis de l'image] + [Responsabilité], Cordialement."""
                 
                 if source_photo:
                     img = Image.open(source_photo)
@@ -111,9 +108,9 @@ if lancer_analyse:
                     response = model.generate_content(prompt)
                 objet_ia = response.text
             except Exception as e:
-                objet_ia = f"Erreur : {e}"
+                objet_ia = f"Erreur technique : {e}"
     else:
-        st.error("Veuillez ajouter une photo ou des notes avant de lancer l'analyse.")
+        st.warning("⚠️ Veuillez d'abord ajouter une photo ou une note.")
 
 st.divider()
 st.subheader("🔍 Analyse de l'Inspecteur IA")
