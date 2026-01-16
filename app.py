@@ -1,3 +1,46 @@
+import streamlit as st
+import pandas as pd
+import google.generativeai as genai
+from PIL import Image
+from datetime import datetime
+
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="GH Diagnostic Auto", layout="wide")
+
+# --- 2. CONFIGURATION DE L'IA ---
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+else:
+    st.error("⚠️ Clé API manquante dans les Secrets !")
+
+# --- 3. BASE DE DONNÉES LOCATAIRES ---
+data = {
+    "Résidence": ["Canterane", "Canterane", "La Dussaude", "La Dussaude", "Canterane"],
+    "Appartement": ["10", "40", "95", "64", "103"],
+    "Nom": ["lolo", "Aniotsbehere", "zezette", "kiki", "Dédé"]
+}
+df = pd.DataFrame(data)
+
+# --- 4. INTERFACE ---
+st.title("🚀 GH Auto-Signalement")
+st.caption("Modèle : gemini-3-flash-preview")
+st.markdown("---")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📍 Localisation")
+    res_sel = st.selectbox("Résidence", sorted(df["Résidence"].unique()))
+    df_res = df[df["Résidence"] == res_sel]
+    appt_sel = st.selectbox("Appartement", sorted(df_res["Appartement"].unique()))
+    nom_loc = df_res[df_res["Appartement"] == appt_sel]["Nom"].iloc[0]
+    st.info(f"👤 Locataire : **{nom_loc}**")
+
+with col2:
+    st.subheader("📸 Preuve visuelle")
+    photo = st.file_uploader("Prendre/Joindre la photo", type=["jpg", "png", "jpeg"])
+    note_facultative = st.text_input("Détail supplémentaire (facultatif)")
+
 # --- 5. LOGIQUE D'ANALYSE AUTOMATIQUE ---
 if st.button("🔍 GÉNÉRER LE RAPPORT ET LA LETTRE", type="primary", use_container_width=True):
     if not photo:
@@ -7,7 +50,7 @@ if st.button("🔍 GÉNÉRER LE RAPPORT ET LA LETTRE", type="primary", use_conta
             try:
                 model = genai.GenerativeModel('gemini-3-flash-preview')
                 
-                # On demande à l'IA d'être très précise sur la conclusion
+                # Prompt sécurisé pour éviter les erreurs de badge
                 prompt_global = f"""
                 Tu es l'expert technique de Gironde Habitat.
                 Regarde cette photo et :
@@ -24,7 +67,7 @@ if st.button("🔍 GÉNÉRER LE RAPPORT ET LA LETTRE", type="primary", use_conta
                 reponse_ia = res.text
                 
                 # --- LOGIQUE DE DÉTECTION DU BADGE ---
-                type_charge = "🏢 CHARGE GH" # Par défaut
+                type_charge = "🏢 CHARGE GH"
                 label_lettre = "CHARGE GH"
                 
                 if "CODE_RESULTAT:LOC" in reponse_ia:
@@ -37,7 +80,7 @@ if st.button("🔍 GÉNÉRER LE RAPPORT ET LA LETTRE", type="primary", use_conta
                     type_charge = "🏢 CHARGE GH"
                     label_lettre = "CHARGE GH"
                 
-                # On nettoie le texte pour ne pas afficher le "CODE_RESULTAT" à l'utilisateur
+                # Nettoyage du texte pour l'affichage
                 affichage_texte = reponse_ia.split("CODE_RESULTAT:")[0]
 
                 # --- AFFICHAGE ---
@@ -53,8 +96,9 @@ if st.button("🔍 GÉNÉRER LE RAPPORT ET LA LETTRE", type="primary", use_conta
                 st.markdown("---")
                 st.subheader("✉️ Courrier pour la plateforme")
                 
+                date_jour = datetime.now().strftime("%d/%m/%Y")
                 lettre = f"""OBJET : Signalement technique - {res_sel} / Appt {appt_sel}
-DATE : {datetime.now().strftime("%d/%m/%Y")}
+DATE : {date_jour}
 
 Madame, Monsieur,
 
@@ -72,3 +116,6 @@ L'équipe technique GH."""
                 
             except Exception as e:
                 st.error(f"Erreur d'analyse : {e}")
+
+st.markdown("---")
+st.caption("GH-Auto-Pilot : Plus rien à saisir, l'IA s'occupe de tout.")
