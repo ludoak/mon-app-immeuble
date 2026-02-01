@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 import os
 
-# --- 1. DESIGN HOLOGRAPHIQUE (CSS) ---
+# --- 1. DESIGN HOLOGRAPHIQUE ---
 st.set_page_config(page_title="GH - Project Neon", layout="wide")
 
 st.markdown("""
@@ -31,6 +31,8 @@ st.markdown("""
         background: linear-gradient(90deg, #ff00ff, #00f2ff);
         color: white; font-weight: bold; border: none; border-radius: 20px;
     }
+    /* Style pour le sélecteur radio */
+    .stRadio>div { color: #ff00ff !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -44,12 +46,10 @@ def charger_donnees():
 if 'df_locataires' not in st.session_state:
     st.session_state.df_locataires = charger_donnees()
 
-# Connexion avec la clé validée
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 # --- 3. INTERFACE ---
 st.markdown("<h1 class='neon-title'>GIRONDE HABITAT</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; color:#00f2ff; opacity:0.8;'>SYSTÈME D'EXPERTISE HOLOGRAPHIQUE</p>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([1, 1, 1.3])
 
@@ -61,7 +61,7 @@ with col1:
 
 with col2:
     st.markdown("<h3 style='color:#ff00ff;'>🔧 ÉTAT SYSTÈME</h3>", unsafe_allow_html=True)
-    st.markdown("<div class='holo-card'><b>RÉSEAU IA</b> : CONNECTÉ ✅<br><b>SCANNER</b> : PRÊT 📡</div>", unsafe_allow_html=True)
+    st.markdown("<div class='holo-card'><b>RÉSEAU IA</b> : CONNECTÉ ✅<br><b>MODE</b> : HYBRIDE 📡</div>", unsafe_allow_html=True)
 
 with col3:
     st.markdown("<h3 style='color:#ff00ff;'>📟 DIAGNOSTIC</h3>", unsafe_allow_html=True)
@@ -70,11 +70,17 @@ with col3:
         res_sel = st.selectbox("Résidence", df["Résidence"].unique())
         appt_sel = st.selectbox("Appartement", df[df["Résidence"] == res_sel]["Appartement"])
         
-        photo = st.camera_input("SCANNER")
+        # --- SÉLECTEUR DE SOURCE PHOTO ---
+        source = st.radio("Méthode d'acquisition :", ["Appareil Photo", "Fichier / Galerie"], horizontal=True)
+        
+        photo = None
+        if source == "Appareil Photo":
+            photo = st.camera_input("SCANNER DIRECT")
+        else:
+            photo = st.file_uploader("CHARGER DEPUIS LE TERMINAL", type=["jpg", "jpeg", "png"])
         
         if photo and st.button("🚀 LANCER L'ANALYSE"):
             try:
-                # Détection automatique du modèle disponible
                 models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                 model = genai.GenerativeModel(models[0])
                 
@@ -83,7 +89,6 @@ with col3:
                 
                 st.markdown(f"<h4 style='color:#ff00ff;'>RÉSULTAT :</h4><p>{response.text}</p>", unsafe_allow_html=True)
                 
-                # Lettre auto
                 st.divider()
                 nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
                 lettre = f"OBJET : Signalement {res_sel} / {appt_sel}\nLocataire : {nom_loc}\n\nConstat : {response.text}"
