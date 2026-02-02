@@ -16,8 +16,7 @@ st.markdown("""
         border: 1px solid #ff00ff;
         border-radius: 12px;
         padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 0 10px rgba(255, 0, 255, 0.2);
+        box-shadow: 0 0 15px rgba(255, 0, 255, 0.2);
     }
     .neon-title { 
         color: #ff00ff; 
@@ -32,17 +31,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.markdown("<h1 class='neon-title'>GIRONDE HABITAT - EXPERT</h1>", unsafe_allow_html=True)
-
-# --- 2. GESTION DE LA CLÉ API ---
-# On essaie d'abord les secrets, sinon on affiche la zone de saisie
-api_key = st.secrets.get("CLE_TEST", "")
-
-if not api_key:
-    st.info("💡 Connexion aux secrets en attente...")
-    api_key = st.text_input("🔑 Colle ta clé AIzaSy... ici pour activer l'IA :", type="password")
+# --- 2. CONFIGURATION IA ---
+if "CLE_TEST" in st.secrets:
+    genai.configure(api_key=st.secrets["CLE_TEST"])
 else:
-    st.success("✅ Système connecté via Secrets")
+    st.error("🚨 Clé introuvable dans les secrets Streamlit.")
+    st.stop()
 
 # --- 3. CHARGEMENT DES DONNÉES ---
 DB_FILE = "base_locataires_gh.csv"
@@ -54,49 +48,47 @@ def charger_donnees():
 if 'df_locataires' not in st.session_state:
     st.session_state.df_locataires = charger_donnees()
 
-# --- 4. INTERFACE PRINCIPALE ---
-if api_key:
-    genai.configure(api_key=api_key)
-    df = st.session_state.df_locataires
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("👥 RÉSIDENTS")
-        st.dataframe(df, use_container_width=True)
+# --- 4. INTERFACE ---
+st.markdown("<h1 class='neon-title'>GIRONDE HABITAT - EXPERT</h1>", unsafe_allow_html=True)
 
-    with col2:
-        st.markdown('<div class="holo-card">', unsafe_allow_html=True)
-        res_sel = st.selectbox("Résidence", df["Résidence"].unique())
-        appt_sel = st.selectbox("Appartement", df[df["Résidence"] == res_sel]["Appartement"])
-        
-        source = st.radio("Méthode d'acquisition :", ["Scanner Photo", "Galerie / Fichier"], horizontal=True)
-        
-        photo = None
-        if source == "Scanner Photo":
-            photo = st.camera_input("SCAN EN DIRECT")
-        else:
-            photo = st.file_uploader("IMPORTER UNE IMAGE", type=["jpg", "png", "jpeg"])
-        
-        if photo and st.button("🚀 LANCER L'ANALYSE TECHNIQUE"):
-            try:
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                img = Image.open(photo)
-                with st.spinner("Analyse holographique en cours..."):
-                    prompt = "Expert bâtiment. Analyse la photo. Charge : BAILLEUR (GH), LOCATAIRE ou PRESTATAIRE ? Justifie en 2 lignes."
-                    response = model.generate_content([prompt, img])
-                    
-                    st.markdown(f"### RÉSULTAT :")
-                    st.info(response.text)
-                    
-                    # --- COURRIER AUTOMATIQUE ---
-                    st.divider()
-                    nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
-                    date_str = datetime.now().strftime("%d/%m/%Y")
-                    lettre = f"OBJET : Signalement {res_sel} / Appt {appt_sel}\nDATE : {date_str}\n\nMadame, Monsieur,\n\nConstat : {response.text}"
-                    st.text_area("Courrier prêt à copier :", lettre, height=150)
-            except Exception as e:
-                st.error(f"L'analyse a échoué : {e}")
-        st.markdown('</div>', unsafe_allow_html=True)
-else:
-    st.warning("🔒 En attente de la clé API pour activer les capteurs de diagnostic.")
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.subheader("👥 RÉSIDENTS")
+    df = st.session_state.df_locataires
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+with col2:
+    st.markdown('<div class="holo-card">', unsafe_allow_html=True)
+    res_sel = st.selectbox("📍 Résidence", df["Résidence"].unique())
+    appt_sel = st.selectbox("🚪 Appartement", df[df["Résidence"] == res_sel]["Appartement"])
+    
+    st.divider()
+    source = st.radio("📸 Source :", ["Photo Directe", "Galerie / Fichier"], horizontal=True)
+    photo = st.camera_input("SCAN") if source == "Photo Directe" else st.file_uploader("IMPORT", type=["jpg", "png", "jpeg"])
+    
+    if photo and st.button("🚀 LANCER L'ANALYSE TECHNIQUE"):
+        try:
+            # AUTO-DÉTECTION DU MODÈLE DISPONIBLE (Pour éviter l'erreur 404)
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            target_model = next((m for m in available_models if "flash" in m), available_models[0])
+            
+            model = genai.GenerativeModel(target_model)
+            img = Image.open(photo)
+            
+            with st.spinner(f"Analyse en cours via {target_model}..."):
+                prompt = "Expert bâtiment. Analyse la photo. Dis si c'est la charge du Bailleur (Gironde Habitat), du Locataire ou d'un Prestataire. Réponse courte."
+                response = model.generate_content([prompt, img])
+                
+                st.markdown("### 📋 RAPPORT")
+                st.info(response.text)
+                
+                st.divider()
+                nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
+                lettre = f"OBJET : Constat technique - {res_sel} / {appt_sel}\nLOCATAIRE : {nom_loc}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\n{response.text}"
+                st.text_area("Copier pour plateforme :", lettre, height=150)
+                
+            st.success("Analyse terminée.")
+        except Exception as e:
+            st.error(f"L'analyse a échoué : {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
