@@ -4,9 +4,8 @@ import pandas as pd
 import google.generativeai as genai
 from PIL import Image
 from datetime import datetime
-import io
 
-# --- 1. CONFIG & STYLE ---
+# --- 1. CONFIG & DESIGN ---
 st.set_page_config(page_title="GH Expert Pro", layout="wide")
 
 st.markdown("""
@@ -45,55 +44,68 @@ tab_diag, tab_avant_apres, tab_guide, tab_admin = st.tabs([
     "⚙️ GESTION"
 ])
 
-# --- ONGLET 1 : DIAGNOSTIC ---
+# --- ONGLET 1 : DIAGNOSTIC IA ---
 with tab_diag:
     if not df.empty:
         col_l, col_r = st.columns([1, 1.5])
         with col_l:
-            st.subheader("👥 RÉSIDENTS")
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.subheader("👥 LOCATAIRE")
+            res = st.selectbox("📍 Résidence", df["Résidence"].unique())
+            bat = st.selectbox("🏢 Bâtiment", df[df["Résidence"] == res]["Bâtiment"].unique())
+            app = st.selectbox("🚪 Appartement", df[(df["Résidence"] == res) & (df["Bâtiment"] == bat)]["Appartement"].unique())
+            nom_loc = df[(df["Résidence"] == res) & (df["Bâtiment"] == bat) & (df["Appartement"] == app)]["Nom"].iloc[0]
+            st.info(f"📍 Occupant : {nom_loc}")
+            
         with col_r:
             st.markdown('<div class="holo-card">', unsafe_allow_html=True)
-            res = st.selectbox("📍 Résidence", df["Résidence"].unique(), key="diag_res")
-            bat = st.selectbox("🏢 Bâtiment", df[df["Résidence"] == res]["Bâtiment"].unique(), key="diag_bat")
-            app = st.selectbox("🚪 Appartement", df[(df["Résidence"] == res) & (df["Bâtiment"] == bat)]["Appartement"].unique(), key="diag_app")
-            
             img_file = st.camera_input("SCANNER LE DÉSORDRE")
-            if img_file and st.button("🚀 ANALYSER"):
+            
+            if img_file and st.button("🚀 ANALYSER LE DÉSORDRE"):
                 try:
                     models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                     model = genai.GenerativeModel(next((m for m in models if "flash" in m), models[0]))
-                    response = model.generate_content(["Analyse technique : Qui paie (GH, Locataire ou Entreprise) ?", Image.open(img_file)])
+                    response = model.generate_content(["Expert GH. Charge Bailleur, Locataire ou Entreprise ? Réponse courte.", Image.open(img_file)])
                     st.session_state.last_report = response.text
-                    st.info(response.text)
+                    st.session_state.info_loc = f"{res} - Bât {bat} - Appt {app} ({nom_loc})"
+                    st.success(response.text)
                 except Exception as e: st.error(f"Erreur : {e}")
+            
+            if 'last_report' in st.session_state:
+                st.divider()
+                full_text = f"*RAPPORT GH EXPERT*\n📍 {st.session_state.info_loc}\n📅 {datetime.now().strftime('%d/%m/%Y')}\n\n📢 *CONSTAT :*\n{st.session_state.last_report}"
+                st.text_area("📋 Message à copier (WhatsApp/Mail) :", full_text, height=150)
             st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ONGLET 2 : AVANT / APRÈS (Nouveau !) ---
+# --- ONGLET 2 : AVANT / APRÈS ---
 with tab_avant_apres:
-    st.markdown("### 🛠️ Comparatif de Travaux")
+    st.markdown("### 🛠️ Comparatif de Prestation")
     c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**CONSTAT INITIAL (AVANT)**")
-        photo_avant = st.camera_input("PHOTO AVANT", key="avant")
-    with c2:
-        st.markdown("**RÉSULTAT (APRÈS)**")
-        photo_apres = st.camera_input("PHOTO APRÈS", key="apres")
-    
-    if photo_avant and photo_apres:
-        st.success("✅ Comparatif prêt pour le rapport !")
-        # Option pour générer un résumé de la prestation
-        if st.button("📝 GÉNÉRER RAPPORT PDF (Simulé)"):
-            st.write("🔄 Compilation des photos et du diagnostic en cours...")
-            st.balloons()
+    with c1: st.camera_input("📷 ÉTAT INITIAL (AVANT)", key="av")
+    with c2: st.camera_input("📷 APRÈS INTERVENTION", key="ap")
+    st.write("💡 *Prenez les photos pour valider la fin de chantier.*")
 
-# --- ONGLET 3 : GUIDE ---
+# --- ONGLET 3 : GUIDE DES CHARGES ---
 with tab_guide:
-    st.markdown("### 🔍 Matrice des Responsabilités")
-    # (Le code de ton guide coloré reste ici)
-    st.write("Consultez les codes couleurs pour valider le diagnostic.")
+    st.markdown("### 🔍 Matrice de Responsabilité")
+    guide = {
+        "Équipement": ["Joints/Robinets", "Chaudière", "Gros Oeuvre", "VMC", "Électricité"],
+        "Responsable": ["🟢 LOCATAIRE", "🟠 PRESTATAIRE", "🔵 BAILLEUR (GH)", "🟠 PRESTATAIRE", "🟢 LOCATAIRE"],
+        "Note": ["Entretien courant", "Contrat entretien", "Structure/Façade", "Entretien annuel", "Petites réparations"]
+    }
+    st.table(pd.DataFrame(guide))
 
 # --- ONGLET 4 : GESTION ---
 with tab_admin:
-    st.subheader("⚙️ Administration du Google Sheets")
-    # (Le code d'ajout/suppression reste ici)
+    st.subheader("⚙️ Administration Base de Données")
+    # Formulaire d'ajout simple
+    with st.expander("➕ Ajouter un nouveau locataire"):
+        with st.form("add"):
+            r = st.text_input("Résidence")
+            b = st.text_input("Bâtiment")
+            a = st.text_input("Appartement")
+            n = st.text_input("Nom")
+            if st.form_submit_button("Enregistrer"):
+                new_row = pd.DataFrame([{"Résidence": r, "Bâtiment": b, "Appartement": a, "Nom": n}])
+                conn.update(data=pd.concat([df, new_row], ignore_index=True))
+                st.success("Enregistré !")
+                st.rerun()
