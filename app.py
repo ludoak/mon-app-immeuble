@@ -55,14 +55,21 @@ with tab_diag:
             st.subheader("👥 CHOIX LOCATAIRE")
             res = st.selectbox("📍 Résidence", df["Résidence"].unique())
             bat = st.selectbox("🏢 Bâtiment", df[df["Résidence"] == res]["Bâtiment"].unique())
-            app = st.selectbox("🚪 Appartement", df[(df["Résidence"] == res) & (df["Bâtiment"] == bat)]["Appartement"].unique())
+            app = st.selectbox("門 Appartement", df[(df["Résidence"] == res) & (df["Bâtiment"] == bat)]["Appartement"].unique())
             nom_loc = df[(df["Résidence"] == res) & (df["Bâtiment"] == bat) & (df["Appartement"] == app)]["Nom"].iloc[0]
             st.warning(f"Occupant : {nom_loc}")
-            dest_mail = st.text_input("📧 Envoyer à :", placeholder="ex: bureau@gh.fr")
+            dest_mail = st.text_input("📧 Mail destinataire :", placeholder="ex: technique@gh.fr")
             
         with col_r:
             st.markdown('<div class="holo-card">', unsafe_allow_html=True)
-            img_diag = st.camera_input("SCAN")
+            source_diag = st.radio("Source image :", ["Caméra", "Fichier PC/Tel"], horizontal=True, key="src_diag")
+            
+            img_diag = None
+            if source_diag == "Caméra":
+                img_diag = st.camera_input("SCAN")
+            else:
+                img_diag = st.file_uploader("IMPORTER IMAGE", type=["jpg", "png", "jpeg"], key="file_diag")
+            
             if img_diag and st.button("🚀 ANALYSER"):
                 try:
                     model = genai.GenerativeModel('gemini-1.5-flash')
@@ -86,10 +93,19 @@ with tab_diag:
 with tab_chantier:
     st.markdown("### 🛠️ Suivi de travaux")
     c1, c2 = st.columns(2)
-    with c1: st.camera_input("📸 AVANT", key="c_av")
-    with c2: st.camera_input("📸 APRÈS", key="c_ap")
+    with c1:
+        st.markdown("**ÉTAT INITIAL (AVANT)**")
+        src_av = st.radio("Source :", ["Caméra", "Fichier"], horizontal=True, key="src_av")
+        if src_av == "Caméra": st.camera_input("AVANT", key="cam_av")
+        else: st.file_uploader("Fichier Avant", type=["jpg", "png"], key="f_av")
+        
+    with c2:
+        st.markdown("**RÉSULTAT (APRÈS)**")
+        src_ap = st.radio("Source :", ["Caméra", "Fichier"], horizontal=True, key="src_ap")
+        if src_ap == "Caméra": st.camera_input("APRÈS", key="cam_ap")
+        else: st.file_uploader("Fichier Après", type=["jpg", "png"], key="f_ap")
 
-# --- ONGLET 3 : GESTION (RETOUR DU FORMULAIRE) ---
+# --- ONGLET 3 : GESTION ---
 with tab_admin:
     st.subheader("➕ Ajouter un nouveau résident")
     with st.form("add_loc"):
@@ -98,16 +114,12 @@ with tab_admin:
         b_i = ca.text_input("Bâtiment")
         a_i = cb.text_input("Appartement")
         n_i = cb.text_input("Nom du Locataire")
-        
-        if st.form_submit_button("💾 ENREGISTRER DANS LE SHEETS"):
+        if st.form_submit_button("💾 ENREGISTRER"):
             if r_i and n_i:
                 new_row = pd.DataFrame([{"Résidence": r_i, "Bâtiment": b_i, "Appartement": a_i, "Nom": n_i}])
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-                conn.update(data=updated_df)
+                conn.update(data=pd.concat([df, new_row], ignore_index=True))
                 st.success(f"✅ {n_i} ajouté !")
                 st.rerun()
-            else:
-                st.error("Remplis au moins la Résidence et le Nom.")
 
     st.divider()
     st.subheader("🗑️ Supprimer un résident")
