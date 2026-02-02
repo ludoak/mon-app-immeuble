@@ -22,15 +22,16 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. VÉRIFICATION DES SECRETS ---
+# --- 2. GESTION DE LA CLÉ API (PLAN A & B) ---
+api_key = st.secrets.get("CLE_TEST")
+
 st.markdown("<h1 class='neon-title'>GIRONDE HABITAT</h1>", unsafe_allow_html=True)
 
-if "CLE_TEST" not in st.secrets:
-    st.error("❌ ERREUR : Le tiroir 'Secrets' est vide ou mal rempli sur Streamlit Cloud.")
-    st.info("💡 Rappel : Tu dois écrire CLE_TEST = 'TaClé' dans les paramètres de l'app.")
-    st.stop() # On arrête l'app ici si la clé n'est pas là
+if not api_key:
+    st.warning("⚠️ Clé non détectée dans les secrets Streamlit.")
+    api_key = st.text_input("🔑 Colle ta clé API ici pour débloquer (Plan B) :", type="password")
 else:
-    st.success("✅ CONNEXION ÉTABLIE : La clé a été trouvée !")
+    st.success("✅ CONNEXION ÉTABLIE : La clé a été trouvée dans les Secrets !")
 
 # --- 3. CHARGEMENT DES DONNÉES ---
 DB_FILE = "base_locataires_gh.csv"
@@ -59,20 +60,23 @@ with col2:
     photo = st.camera_input("SCAN") if source == "Photo Directe" else st.file_uploader("IMPORT", type=["jpg", "png", "jpeg"])
     
     if photo and st.button("🚀 LANCER L'ANALYSE"):
-        try:
-            genai.configure(api_key=st.secrets["CLE_TEST"])
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            img = Image.open(photo)
-            
-            with st.spinner("Analyse technique en cours..."):
-                response = model.generate_content(["Expert GH. Charge : Bailleur, Locataire ou Prestataire ? Courte réponse.", img])
-                st.subheader("RÉSULTAT")
-                st.write(response.text)
+        if not api_key:
+            st.error("Désolé, aucune clé API n'est disponible pour l'analyse.")
+        else:
+            try:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                img = Image.open(photo)
                 
-                st.divider()
-                nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
-                lettre = f"OBJET : Signalement {res_sel} / {appt_sel}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\n{response.text}"
-                st.text_area("Courrier prêt :", lettre, height=150)
-        except Exception as e:
-            st.error(f"Erreur d'analyse : {e}")
+                with st.spinner("Analyse technique en cours..."):
+                    response = model.generate_content(["Expert GH. Charge : Bailleur, Locataire ou Prestataire ? Courte réponse.", img])
+                    st.subheader("RÉSULTAT")
+                    st.write(response.text)
+                    
+                    st.divider()
+                    nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
+                    lettre = f"OBJET : Signalement {res_sel} / {appt_sel}\nDATE : {datetime.now().strftime('%d/%m/%Y')}\n\n{response.text}"
+                    st.text_area("Courrier prêt :", lettre, height=150)
+            except Exception as e:
+                st.error(f"Erreur d'analyse : {e}")
     st.markdown('</div>', unsafe_allow_html=True)
