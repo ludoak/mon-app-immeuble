@@ -44,7 +44,7 @@ tab_diag, tab_avant_apres, tab_admin = st.tabs([
     "⚙️ GESTION & SUPPRESSION"
 ])
 
-# --- ONGLET 1 : DIAGNOSTIC (APPAREIL PHOTO 1) ---
+# --- ONGLET 1 : DIAGNOSTIC (PHOTO OU FICHIER) ---
 with tab_diag:
     if not df.empty:
         col_l, col_r = st.columns([1, 1.5])
@@ -58,29 +58,37 @@ with tab_diag:
             
         with col_r:
             st.markdown('<div class="holo-card">', unsafe_allow_html=True)
-            # L'appareil photo pour le diagnostic
-            img_diag = st.camera_input("📸 SCANNER LE PROBLÈME")
+            mode = st.radio("Méthode d'image :", ["Prendre une Photo", "Importer un Fichier (PC)"], horizontal=True)
+            
+            img_diag = None
+            if mode == "Prendre une Photo":
+                img_diag = st.camera_input("📸 SCANNER")
+            else:
+                img_diag = st.file_uploader("📂 CHOISIR UNE IMAGE", type=["jpg", "jpeg", "png"])
             
             if img_diag and st.button("🚀 LANCER L'ANALYSE"):
                 try:
                     models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                     model = genai.GenerativeModel(next((m for m in models if "flash" in m), models[0]))
                     response = model.generate_content(["Expert GH. Charge Bailleur, Locataire ou Entreprise ?", Image.open(img_diag)])
-                    st.session_state.last_report = response.text
                     st.success(response.text)
                 except Exception as e: st.error(f"Erreur : {e}")
             st.markdown('</div>', unsafe_allow_html=True)
 
-# --- ONGLET 2 : AVANT / APRÈS (APPAREILS PHOTO 2 & 3) ---
+# --- ONGLET 2 : AVANT / APRÈS ---
 with tab_avant_apres:
     st.markdown("### 🛠️ Suivi de chantier")
     c1, c2 = st.columns(2)
     with c1:
-        st.camera_input("📷 PHOTO AVANT", key="cam_avant")
+        st.markdown("**ÉTAT INITIAL (AVANT)**")
+        source_av = st.radio("Source Avant :", ["Caméra", "Fichier"], key="s_av", horizontal=True)
+        photo_av = st.camera_input("AVANT", key="c_av") if source_av == "Caméra" else st.file_uploader("Fichier Avant", key="f_av")
     with c2:
-        st.camera_input("📷 PHOTO APRÈS", key="cam_apres")
+        st.markdown("**RÉSULTAT (APRÈS)**")
+        source_ap = st.radio("Source Après :", ["Caméra", "Fichier"], key="s_ap", horizontal=True)
+        photo_ap = st.camera_input("APRÈS", key="c_ap") if source_ap == "Caméra" else st.file_uploader("Fichier Après", key="f_ap")
 
-# --- ONGLET 3 : GESTION (AJOUTER ET SUPPRIMER) ---
+# --- ONGLET 3 : GESTION ---
 with tab_admin:
     st.subheader("➕ Ajouter un résident")
     with st.form("add_form"):
@@ -98,14 +106,10 @@ with tab_admin:
     
     st.subheader("🗑️ Supprimer un résident")
     if not df.empty:
-        # On affiche la liste pour choisir qui supprimer
-        liste_noms = df["Nom"].tolist()
-        nom_a_supprimer = st.selectbox("Sélectionner le nom à effacer", liste_noms)
-        
+        nom_a_supprimer = st.selectbox("Sélectionner le nom à effacer", df["Nom"].tolist())
         st.markdown('<div class="delete-btn">', unsafe_allow_html=True)
         if st.button(f"❌ SUPPRIMER DÉFINITIVEMENT {nom_a_supprimer}"):
             df_mis_a_jour = df[df["Nom"] != nom_a_supprimer]
             conn.update(data=df_mis_a_jour)
-            st.error(f"{nom_a_supprimer} a été retiré du Google Sheets.")
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
