@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 import os
 
-# --- 1. DESIGN HOLOGRAPHIQUE ---
+# --- 1. DESIGN HOLOGRAPHIQUE (CSS) ---
 st.set_page_config(page_title="GH - Project Neon", layout="wide")
 
 st.markdown("""
@@ -31,12 +31,11 @@ st.markdown("""
         background: linear-gradient(90deg, #ff00ff, #00f2ff);
         color: white; font-weight: bold; border: none; border-radius: 20px;
     }
-    /* Style pour le sélecteur radio */
     .stRadio>div { color: #ff00ff !important; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. DONNÉES & IA ---
+# --- 2. DONNÉES & CONFIGURATION ---
 DB_FILE = "base_locataires_gh.csv"
 def charger_donnees():
     if os.path.exists(DB_FILE):
@@ -46,10 +45,15 @@ def charger_donnees():
 if 'df_locataires' not in st.session_state:
     st.session_state.df_locataires = charger_donnees()
 
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+# Connexion IA (On force la config)
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+else:
+    st.error("🚨 Clé API introuvable dans les Secrets.")
 
-# --- 3. INTERFACE ---
+# --- 3. INTERFACE PRINCIPALE ---
 st.markdown("<h1 class='neon-title'>GIRONDE HABITAT</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center; color:#00f2ff; opacity:0.8;'>VERSION HYBRIDE : TERRAIN & ARCHIVES</p>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([1, 1, 1.3])
 
@@ -61,39 +65,48 @@ with col1:
 
 with col2:
     st.markdown("<h3 style='color:#ff00ff;'>🔧 ÉTAT SYSTÈME</h3>", unsafe_allow_html=True)
-    st.markdown("<div class='holo-card'><b>RÉSEAU IA</b> : CONNECTÉ ✅<br><b>MODE</b> : HYBRIDE 📡</div>", unsafe_allow_html=True)
+    st.markdown("<div class='holo-card'><b>RÉSEAU IA</b> : CONNECTÉ ✅<br><b>MODE</b> : SCAN & IMPORT 📡</div>", unsafe_allow_html=True)
+    if st.button("🔄 RÉINITIALISER"):
+        st.rerun()
 
 with col3:
     st.markdown("<h3 style='color:#ff00ff;'>📟 DIAGNOSTIC</h3>", unsafe_allow_html=True)
     with st.container():
         st.markdown('<div class="holo-card">', unsafe_allow_html=True)
+        
+        # Sélections
         res_sel = st.selectbox("Résidence", df["Résidence"].unique())
         appt_sel = st.selectbox("Appartement", df[df["Résidence"] == res_sel]["Appartement"])
         
-        # --- SÉLECTEUR DE SOURCE PHOTO ---
-        source = st.radio("Méthode d'acquisition :", ["Appareil Photo", "Fichier / Galerie"], horizontal=True)
+        # --- SOURCE PHOTO HYBRIDE ---
+        source = st.radio("Acquisition de l'image :", ["Scanner (Photo)", "Importer (Galerie)"], horizontal=True)
         
         photo = None
-        if source == "Appareil Photo":
-            photo = st.camera_input("SCANNER DIRECT")
+        if source == "Scanner (Photo)":
+            photo = st.camera_input("SCANNER")
         else:
-            photo = st.file_uploader("CHARGER DEPUIS LE TERMINAL", type=["jpg", "jpeg", "png"])
+            photo = st.file_uploader("CHOISIR UN FICHIER", type=["jpg", "jpeg", "png"])
         
         if photo and st.button("🚀 LANCER L'ANALYSE"):
             try:
-                models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                model = genai.GenerativeModel(models[0])
-                
+                # Utilisation d'un modèle stable
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 img = Image.open(photo)
-                response = model.generate_content(["Expert GH. Analyse photo : charge bailleur, locataire ou prestataire ? Réponse courte.", img])
                 
-                st.markdown(f"<h4 style='color:#ff00ff;'>RÉSULTAT :</h4><p>{response.text}</p>", unsafe_allow_html=True)
-                
-                st.divider()
-                nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
-                lettre = f"OBJET : Signalement {res_sel} / {appt_sel}\nLocataire : {nom_loc}\n\nConstat : {response.text}"
-                st.text_area("Courrier prêt :", lettre, height=150)
-                
+                with st.spinner("Analyse du flux visuel..."):
+                    prompt = "Expert bâtiment Gironde Habitat. Analyse la photo. Dis si c'est pour le BAILLEUR, le LOCATAIRE ou un PRESTATAIRE. Réponse courte et précise."
+                    response = model.generate_content([prompt, img])
+                    
+                    st.markdown(f"<h4 style='color:#ff00ff;'>RÉSULTAT :</h4><p>{response.text}</p>", unsafe_allow_html=True)
+                    
+                    # Courrier automatique
+                    st.divider()
+                    nom_loc = df[df["Appartement"] == appt_sel]["Nom"].iloc[0]
+                    date_str = datetime.now().strftime("%d/%m/%Y")
+                    
+                    lettre = f"OBJET : Signalement {res_sel} / {appt_sel}\nDATE : {date_str}\nLOCATAIRE : {nom_loc}\n\nCONSTAT : {response.text}"
+                    st.text_area("Courrier prêt à copier :", lettre, height=150)
+                    
             except Exception as e:
-                st.error(f"Erreur d'analyse : {e}")
+                st.error(f"Erreur lors du scan : {e}")
         st.markdown('</div>', unsafe_allow_html=True)
