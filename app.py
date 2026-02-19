@@ -4,81 +4,94 @@ import google.generativeai as genai
 from PIL import Image
 import urllib.parse
 from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
 
-# --- 1. CONFIGURATION ---
-st.set_page_config(page_title="GH Expert", layout="wide")
+# Configuration de la page
+st.set_page_config(page_title="GH Expert Pro", layout="wide")
 
-# Connexion Google Sheets (Mode Sécurisé)
+# --- 1. CONNEXION AUX DONNÉES ---
 try:
-    conn = st.connection("gsheets", type="streamlit_gsheets.connection.GSheetsConnection")
+    conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read()
 except Exception as e:
-    st.warning(f"Impossible de charger les locataires (erreur sheets). Utilisation mode manuel. Erreur: {e}")
+    st.warning("Connexion Google Sheets échouée.")
     df = pd.DataFrame(columns=["Résidence", "Bâtiment", "Appartement", "Nom"])
 
-# Configuration Gemini
-try:
-    if "CLE_TEST" in st.secrets:
-        genai.configure(api_key=st.secrets["CLE_TEST"])
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    else:
-        st.error("Clé Gemini absente des secrets.")
-        st.stop()
-except Exception as e:
-    st.error(f"Erreur initialisation Gemini : {e}")
+# --- 2. CONNEXION IA ---
+if "CLE_TEST" not in st.secrets:
+    st.error("Clé API Gemini non trouvée dans les secrets Streamlit.")
     st.stop()
+else:
+    genai.configure(api_key=st.secrets["CLE_TEST"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
-# --- 2. INTERFACE ---
-st.title("GH EXPERT PRO")
+# --- 3. INTERFACE ---
+st.markdown("<h1 style='text-align:center; color:#ff00ff;'>GH EXPERT PRO</h1>", unsafe_allow_html=True)
 
-# Création des onglets
-tab1, tab2 = st.tabs(["📟 DIAGNOSTIC", "📋 GUIDE"])
+tab1, tab2, tab3 = st.tabs(["📟 DIAGNOSTIC", "📋 GUIDE", "⚙️ GESTION"])
 
 # --- ONGLET DIAGNOSTIC ---
 with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Locataire")
-        # Si le fichier est vide, on permet la saisie manuelle
+        st.subheader("📍 Locataire")
         if df.empty:
             res = st.text_input("Résidence")
             app = st.text_input("Appartement")
-            nom_loc = "Inconnu"
+            nom = "Inconnu"
         else:
             res = st.selectbox("Résidence", df["Résidence"].unique())
-            filtered = df[df["Résidence"] == res]
-            app = st.selectbox("Appartement", filtered["Appartement"].unique())
-            nom_loc = filtered[filtered["Appartement"] == app]["Nom"].iloc[0]
+            filtre = df[df["Résidence"] == res]
+            app = st.selectbox("Appartement", filtre["Appartement"].unique())
+            nom = filtre[filtre["Appartement"] == app]["Nom"].iloc[0]
         
-        st.write(f"**Occupant :** {nom_loc}")
-        dest_mail = st.text_input("Email", "ludoak33@gmail.com")
+        st.info(f"Occupant : **{nom}**")
+        email = st.text_input("Email entreprise", "ludoak33@gmail.com")
 
     with col2:
-        st.subheader("Photo")
+        st.subheader("📸 Constat")
         img = st.camera_input("Prendre la photo")
         
-        if img and st.button("ANALYSER"):
-            with st.spinner("Analyse..."):
+        if img and st.button("🚀 ANALYSER"):
+            with st.spinner("Diagnostic en cours..."):
                 try:
-                    prompt = "Expert bailleur social. Analyse cette photo. Qui paie : Locataire, Bailleur ou Prestataire ? Sois bref."
+                    prompt = "Expert bailleur social. Analyse cette photo. Qui paie : LOCATAIRE, BAILLEUR ou PRESTATAIRE ?"
                     image = Image.open(img)
-                    response = model.generate_content([prompt, image])
-                    st.session_state['verdict'] = response.text
+                    reponse = model.generate_content([prompt, image])
+                    st.session_state['resultat'] = reponse.text
                 except Exception as e:
-                    st.error(f"Erreur IA : {e}")
+                    st.error(f"Erreur : {e}")
 
-        if 'verdict' in st.session_state:
-            st.success(st.session_state['verdict'])
-            # Bouton Mail simple
-            sujet = f"Constat {app}"
-            body = f"Locataire : {nom_loc}\nAnalyse : {st.session_state['verdict']}"
-            link = f"mailto:{dest_mail}?subject={urllib.parse.quote(sujet)}&body={urllib.parse.quote(body)}"
-            st.markdown(f"[📧 Envoyer le mail]({link})")
+        if 'resultat' in st.session_state:
+            st.success(st.session_state['resultat'])
+            sujet = f"Constat {app} - {res}"
+            corps = f"Locataire : {nom}\n\nAnalyse :\n{st.session_state['resultat']}"
+            lien = f"mailto:{email}?subject={urllib.parse.quote(sujet)}&body={urllib.parse.quote(corps)}"
+            st.markdown(f"<a href='{lien}' style='background-color:#0078d4; color:white; padding:15px; border-radius:10px; text-decoration:none; display:block; text-align:center;'>📧 ENVOYER LE MAIL</a>", unsafe_allow_html=True)
 
 # --- ONGLET GUIDE ---
 with tab2:
-    st.subheader("Tableau des responsabilités")
-    st.markdown("- **Plomberie (joints)** : LOCATAIRE")
-    st.markdown("- **Chaudière** : PRESTATAIRE")
-    st.markdown("- **Gros œuvres** : BAILLEUR")
+    st.subheader("🔍 Qui paie quoi ?")
+    st.markdown("- **Locataire** : Joints, ampoules, propreté")
+    st.markdown("- **Prestataire** : Chaudière, VMC, ascenseur")
+    st.markdown("- **Bailleur (GH)** : Gros œuvre, fuites majeures")
+
+# --- ONGLET GESTION ---
+with tab3:
+    st.subheader("Ajouter un locataire")
+    with st.form("ajout"):
+        r = st.text_input("Résidence")
+        b = st.text_input("Bâtiment")
+        a = st.text_input("Appartement")
+        n = st.text_input("Nom")
+        if st.form_submit_button("Sauvegarder"):
+            if r and a and n:
+                nouveau = pd.DataFrame([{"Résidence": r, "Bâtiment": b, "Appartement": a, "Nom": n}])
+                try:
+                    base = conn.read()
+                    total = pd.concat([base, nouveau], ignore_index=True)
+                    conn.update(data=total)
+                    st.success("Bien ajouté !")
+                except:
+                    st.error("Erreur de sauvegarde")
