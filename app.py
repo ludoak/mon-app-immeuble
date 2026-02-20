@@ -47,7 +47,6 @@ else:
 # --- 3. INTERFACE ---
 st.markdown("<h1 style='text-align:center; color:#ff00ff;'>GH EXPERT PRO</h1>", unsafe_allow_html=True)
 
-# On remet les 4 onglets
 tab1, tab2, tab3, tab4 = st.tabs(["📟 DIAGNOSTIC & MAIL", "📸 PHOTOS", "📋 GUIDE CHARGES", "⚙️ GESTION"])
 
 # --- ONGLET 1 : DIAGNOSTIC & MAIL ---
@@ -80,7 +79,16 @@ with tab1:
 
     with col2:
         st.subheader("📸 Preuve / Photo")
-        img = st.camera_input("Prendre la photo")
+        
+        # Ajout du choix de la source
+        source = st.radio("Source de l'image :", ["📷 Caméra", "🖼️ Galerie"], horizontal=True)
+        
+        img = None
+        if source == "📷 Caméra":
+            img = st.camera_input("Prendre une photo")
+        else:
+            img = st.file_uploader("Choisir une image", type=["jpg", "png", "jpeg"])
+            
         contexte_user = st.text_area("Précisions (optionnel)", placeholder="Ex: 3ème fois ce mois...")
 
         if st.button("🚀 ANALYSER ET RÉDIGER"):
@@ -190,33 +198,37 @@ with tab1:
             lien = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet)}&body={urllib.parse.quote(st.session_state['mail_genere'])}"
             st.markdown(f"<a href='{lien}' style='background-color:#0078d4; color:white; padding:15px; border-radius:10px; text-decoration:none; display:block; text-align:center; font-weight:bold;'>📧 OUVRIR OUTLOOK / MAIL</a>", unsafe_allow_html=True)
 
-# --- ONGLET 2 : PHOTOS (GALERIE AVANT/APRÈS) ---
+# --- ONGLET 2 : PHOTOS (AVEC CHOIX SOURCE) ---
 with tab2:
-    st.subheader("🛠️ Suivi de travaux (Preuves visuelles)")
-    st.info("Prenez vos photos pour constituer un dossier avant/après.")
+    st.subheader("🛠️ Suivi de travaux")
+    st.info("Prenez ou importez vos photos Avant / Après.")
     c1, c2 = st.columns(2)
     
     with c1:
-        st.markdown("**📷 AVANT INTERVENTION**")
-        img_av = st.camera_input("Photo AVANT", key="cam_av")
+        st.markdown("**📷 AVANT**")
+        # Choix source pour AVANT
+        src_av = st.radio("Source Avant:", ["Caméra", "Galerie"], key="src_av", horizontal=True)
+        img_av = None
+        if src_av == "Caméra":
+            img_av = st.camera_input("Photo AVANT", key="cam_av")
+        else:
+            img_av = st.file_uploader("Fichier AVANT", key="file_av", type=["jpg", "png", "jpeg"])
+            
         if img_av:
-            st.download_button(
-                label="⬇️ Télécharger la photo AVANT",
-                data=img_av,
-                file_name=f"AVANT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
-                mime="image/jpeg"
-            )
+            st.download_button("⬇️ Télécharger AVANT", img_av, file_name=f"AVANT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg")
             
     with c2:
-        st.markdown("**📷 APRÈS INTERVENTION**")
-        img_ap = st.camera_input("Photo APRÈS", key="cam_ap")
+        st.markdown("**📷 APRÈS**")
+        # Choix source pour APRÈS
+        src_ap = st.radio("Source Après:", ["Caméra", "Galerie"], key="src_ap", horizontal=True)
+        img_ap = None
+        if src_ap == "Caméra":
+            img_ap = st.camera_input("Photo APRÈS", key="cam_ap")
+        else:
+            img_ap = st.file_uploader("Fichier APRÈS", key="file_ap", type=["jpg", "png", "jpeg"])
+            
         if img_ap:
-            st.download_button(
-                label="⬇️ Télécharger la photo APRÈS",
-                data=img_ap,
-                file_name=f"APRES_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
-                mime="image/jpeg"
-            )
+            st.download_button("⬇️ Télécharger APRÈS", img_ap, file_name=f"APRES_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg")
 
 # --- ONGLET 3 : GUIDE ---
 with tab3:
