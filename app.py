@@ -3,23 +3,40 @@ import pandas as pd
 import google.generativeai as genai
 from PIL import Image
 import urllib.parse
-from datetime import datetime
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Configuration de la page
 st.set_page_config(page_title="GH Expert Pro", layout="wide")
 
-# --- 1. CONNEXION AUX DONNÉES ---
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df = conn.read()
-except Exception as e:
-    st.warning("Connexion Google Sheets échouée.")
-    df = pd.DataFrame(columns=["Résidence", "Bâtiment", "Appartement", "Nom"])
+# --- 1. CONNEXION AUX DONNÉES (Méthode Fiable) ---
+def load_data():
+    try:
+        # Définition des droits d'accès
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        
+        # Récupération des secrets
+        creds_dict = st.secrets["connections"]["gsheets"]["credentials"].to_dict()
+        spreadsheet_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+        
+        # Connexion
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        # Lecture du fichier
+        sh = client.open_by_url(spreadsheet_url)
+        worksheet = sh.sheet1
+        data = worksheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.warning(f"Connexion Google Sheets échouée : {e}")
+        return pd.DataFrame(columns=["Résidence", "Bâtiment", "Appartement", "Nom"])
+
+df = load_data()
 
 # --- 2. CONNEXION IA ---
 if "CLE_TEST" not in st.secrets:
-    st.error("Clé API Gemini non trouvée dans les secrets Streamlit.")
+    st.error("Clé API Gemini non trouvée.")
     st.stop()
 else:
     genai.configure(api_key=st.secrets["CLE_TEST"])
@@ -80,18 +97,5 @@ with tab2:
 # --- ONGLET GESTION ---
 with tab3:
     st.subheader("Ajouter un locataire")
-    with st.form("ajout"):
-        r = st.text_input("Résidence")
-        b = st.text_input("Bâtiment")
-        a = st.text_input("Appartement")
-        n = st.text_input("Nom")
-        if st.form_submit_button("Sauvegarder"):
-            if r and a and n:
-                nouveau = pd.DataFrame([{"Résidence": r, "Bâtiment": b, "Appartement": a, "Nom": n}])
-                try:
-                    base = conn.read()
-                    total = pd.concat([base, nouveau], ignore_index=True)
-                    conn.update(data=total)
-                    st.success("Bien ajouté !")
-                except:
-                    st.error("Erreur de sauvegarde")
+    st.info("Utilisez le Google Sheet directement pour ajouter des lignes, l'application se mettra à jour.")
+    st.dataframe(df)
