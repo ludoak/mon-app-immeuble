@@ -46,9 +46,9 @@ else:
 # --- 3. INTERFACE ---
 st.markdown("<h1 style='text-align:center; color:#ff00ff;'>GH EXPERT PRO</h1>", unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["📟 RÉDACTION MAIL", "📋 GUIDE CHARGES", "⚙️ GESTION"])
+tab1, tab2, tab3 = st.tabs(["📟 DIAGNOSTIC & MAIL", "📋 GUIDE CHARGES", "⚙️ GESTION"])
 
-# --- ONGLET 1 : RÉDACTION ---
+# --- ONGLET 1 : DIAGNOSTIC & MAIL ---
 with tab1:
     col1, col2 = st.columns(2)
 
@@ -68,7 +68,6 @@ with tab1:
         
         st.info(f"Occupant : **{nom}**")
         
-        # Choix du type de signalement
         type_signalement = st.selectbox("Type de signalement", [
             "1. Technique (Fuite, Panne, Dégradation)",
             "2. Voisinage (Bruit, Incivilité)",
@@ -80,95 +79,127 @@ with tab1:
     with col2:
         st.subheader("📸 Preuve / Photo")
         img = st.camera_input("Prendre la photo")
-        
-        # Champ pour préciser l'urgence ou le contexte
-        contexte_user = st.text_area("Précisions (optionnel)", placeholder="Ex: 3ème fois ce mois, très urgent...")
+        contexte_user = st.text_area("Précisions (optionnel)", placeholder="Ex: 3ème fois ce mois...")
 
-        if st.button("🚀 GÉNÉRER LE MAIL"):
+        if st.button("🚀 ANALYSER ET RÉDIGER"):
             if img or contexte_user:
-                with st.spinner("Rédaction en cours..."):
+                with st.spinner("Analyse en cours..."):
                     try:
-                        # On crée le prompt adapté au type choisi
+                        image_pil = Image.open(img) if img else None
+                        
+                        # --- ÉTAPE 1 : ANALYSE PURE (Pour le chargé d'immeuble) ---
+                        prompt_analyse = """
+                        Tu es expert technique pour un bailleur social.
+                        Analyse cette photo et le contexte.
+                        1. Identifie le problème.
+                        2. Détermine QUI PAIE : LOCATAIRE (entretien courant, joints, ampoules), BAILLEUR (vétusté, gros oeuvre), ou PRESTATAIRE (contrat maintenance).
+                        
+                        Réponds par :
+                        **Problème** : ...
+                        **Responsable** : ...
+                        **Justification** : ...
+                        """
+                        
+                        content_analyse = [prompt_analyse]
+                        if image_pil: content_analyse.append(image_pil)
+                        if contexte_user: content_analyse.append(f"Contexte : {contexte_user}")
+                        
+                        analyse = model.generate_content(content_analyse)
+                        st.session_state['analyse'] = analyse.text
+                        
+                        # --- ÉTAPE 2 : RÉDACTION DU MAIL (Pour l'entreprise) ---
+                        # On adapte le message selon le type choisi
+                        
+                        loc_text = f"Bat {bat}, Appartement {app}"
+                        
                         if "Technique" in type_signalement:
-                            prompt = f"""
-                            Tu es assistant pour un chargé d'immeuble. Rédige un mail COURT et PROFESSIONNEL.
-                            Remplis ce modèle STRICTEMENT. Ne mets pas de sujet, juste le corps du mail.
+                            prompt_mail = f"""
+                            Rédige un mail professionnel très court.
+                            Ne mets pas de titre "En qualité de...". Commence directement par "Bonjour."
                             
-                            Modèle :
+                            Contenu :
                             "Madame, Monsieur,
-                            En qualité de chargé d’immeuble, je vous informe d'une anomalie constatée ce jour sur la résidence {res}.
+                            Bonjour.
+                            Je vous informe d'une anomalie constatée ce jour sur la résidence {res}.
                             Description du problème :
-                            Nature : [Identifie le problème sur la photo ou le contexte]
-                            Localisation exacte : {bat}, {app}
-                            Urgence : [Évalue l'urgence : Modérée / Haute]
+                            Nature : [Décris le problème brièvement]
+                            Localisation exacte : {loc_text}
+                            Urgence : [Modérée ou Haute]
                             Les premières mesures conservatoires ont été prises. Je sollicite l’intervention rapide d'un prestataire.
                             Cordialement,
-                            Aniotsbehere Ludovic, Chargé d’immeuble"
+                            Aniotsbehere Ludovic"
                             
-                            Photo : {img.name if img else 'Aucune'}
-                            Contexte : {contexte_user}
+                            Contexte à utiliser : {contexte_user}
                             """
                         elif "Voisinage" in type_signalement:
-                            prompt = f"""
-                            Tu es assistant pour un chargé d'immeuble. Rédige un mail COURT.
-                            Modèle :
+                            prompt_mail = f"""
+                            Rédige un mail professionnel très court.
+                            Commence par "Bonjour."
+                            
+                            Contenu :
                             "Madame, Monsieur,
+                            Bonjour.
                             Je souhaite porter à votre connaissance des faits perturbant la tranquillité des locataires de la résidence {res}.
-                            Description : [Résume le problème : nuisances, déchets...]
-                            Localisation : {bat}, {app}
+                            Description : [Résume le problème]
+                            Localisation : {loc_text}
                             Une médiation verbale a été tentée. Merci d'acter ce signalement.
                             Respectueusement,
-                            Aniotsbehere Ludovic, Chargé d’immeuble"
+                            Aniotsbehere Ludovic"
                             
                             Contexte : {contexte_user}
                             """
                         else: # Travaux
-                            prompt = f"""
-                            Tu es assistant pour un chargé d'immeuble. Rédige un mail COURT.
-                            Modèle :
-                            "Madame, Monsieur,
-                            Dans le cadre de l’entretien courant de la résidence {res}, j’ai relevé le besoin suivant : [Identifie le besoin].
-                            Localisation : {bat}, {app}
-                            Ces éléments sont essentiels pour la sécurité/propreté. Merci de confirmer la prise en compte.
-                            Cordialement,
-                            Aniotsbehere Ludovic, Chargé d’immeuble"
+                            prompt_mail = f"""
+                            Rédige un mail professionnel très court.
+                            Commence par "Bonjour."
                             
-                            Photo : {img.name if img else 'Aucune'}
+                            Contenu :
+                            "Madame, Monsieur,
+                            Bonjour.
+                            Dans le cadre de l’entretien courant de la résidence {res}, j’ai relevé le besoin suivant : [Identifie le besoin].
+                            Localisation : {loc_text}
+                            Merci de confirmer la prise en compte.
+                            Cordialement,
+                            Aniotsbehere Ludovic"
+                            
                             Contexte : {contexte_user}
                             """
 
-                        # Analyse
-                        image_pil = Image.open(img) if img else None
-                        content = [prompt]
                         if image_pil:
-                            content.append(image_pil)
-                            
-                        reponse = model.generate_content(content)
-                        st.session_state['mail_genere'] = reponse.text
+                            # On ajoute la description de l'image au prompt pour le mail
+                            prompt_mail += "\n\nVoici ce que montre la photo : " + analyse.text
+
+                        mail = model.generate_content(prompt_mail)
+                        st.session_state['mail_genere'] = mail.text
                         
                     except Exception as e:
                         st.error(f"Erreur : {e}")
             else:
                 st.warning("Prenez une photo ou donnez un contexte.")
 
+        # --- AFFICHAGE DES RÉSULTATS ---
+        if 'analyse' in st.session_state:
+            st.markdown("#### 🔍 Analyse Expert (Pour vous)")
+            st.info(st.session_state['analyse'])
+            st.divider()
+
         if 'mail_genere' in st.session_state:
-            st.markdown("#### 📧 Votre mail prêt à l'envoi")
+            st.markdown("#### 📧 Mail à envoyer (Pour l'entreprise)")
             st.code(st.session_state['mail_genere'], language='text')
             
-            # Préparation du lien mail
-            sujet = f"Signalement - {res} - {app}"
+            sujet = f"Signalement - {res} - Bat {bat} Appt {app}"
             lien = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet)}&body={urllib.parse.quote(st.session_state['mail_genere'])}"
             st.markdown(f"<a href='{lien}' style='background-color:#0078d4; color:white; padding:15px; border-radius:10px; text-decoration:none; display:block; text-align:center; font-weight:bold;'>📧 OUVRIR OUTLOOK / MAIL</a>", unsafe_allow_html=True)
 
 # --- ONGLET 2 : GUIDE ---
 with tab2:
     st.subheader("🔍 Qui paie quoi ?")
-    st.markdown("- **Locataire** : Joints, ampoules, propreté, petits travaux")
-    st.markdown("- **Prestataire** : Chaudière, VMC, ascenseur (contrat)")
-    st.markdown("- **Bailleur (GH)** : Gros œuvre, fuites tuyauterie, toiture")
+    st.markdown("- **Locataire** : Joints, ampoules, propreté, aération (moisissures surface)")
+    st.markdown("- **Prestataire** : Chaudière, VMC, ascenseur")
+    st.markdown("- **Bailleur (GH)** : Gros œuvre, infiltrations, toiture")
 
 # --- ONGLET 3 : GESTION ---
 with tab3:
     st.subheader("Ajouter un locataire")
-    st.info("Ajoutez directement les lignes dans le Google Sheet pour mettre à jour la base.")
+    st.info("Ajoutez les lignes dans le Google Sheet.")
     st.dataframe(df)
