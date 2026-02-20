@@ -5,6 +5,7 @@ from PIL import Image
 import urllib.parse
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # Configuration de la page
 st.set_page_config(page_title="GH Expert Pro", layout="wide")
@@ -46,7 +47,8 @@ else:
 # --- 3. INTERFACE ---
 st.markdown("<h1 style='text-align:center; color:#ff00ff;'>GH EXPERT PRO</h1>", unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["📟 DIAGNOSTIC & MAIL", "📋 GUIDE CHARGES", "⚙️ GESTION"])
+# On remet les 4 onglets
+tab1, tab2, tab3, tab4 = st.tabs(["📟 DIAGNOSTIC & MAIL", "📸 PHOTOS", "📋 GUIDE CHARGES", "⚙️ GESTION"])
 
 # --- ONGLET 1 : DIAGNOSTIC & MAIL ---
 with tab1:
@@ -87,7 +89,7 @@ with tab1:
                     try:
                         image_pil = Image.open(img) if img else None
                         
-                        # --- ÉTAPE 1 : ANALYSE PURE (Pour le chargé d'immeuble) ---
+                        # --- ÉTAPE 1 : ANALYSE PURE ---
                         prompt_analyse = """
                         Tu es expert technique pour un bailleur social.
                         Analyse cette photo et le contexte.
@@ -107,9 +109,7 @@ with tab1:
                         analyse = model.generate_content(content_analyse)
                         st.session_state['analyse'] = analyse.text
                         
-                        # --- ÉTAPE 2 : RÉDACTION DU MAIL (Pour l'entreprise) ---
-                        # On adapte le message selon le type choisi
-                        
+                        # --- ÉTAPE 2 : RÉDACTION DU MAIL ---
                         loc_text = f"Bat {bat}, Appartement {app}"
                         
                         if "Technique" in type_signalement:
@@ -166,7 +166,6 @@ with tab1:
                             """
 
                         if image_pil:
-                            # On ajoute la description de l'image au prompt pour le mail
                             prompt_mail += "\n\nVoici ce que montre la photo : " + analyse.text
 
                         mail = model.generate_content(prompt_mail)
@@ -191,15 +190,43 @@ with tab1:
             lien = f"mailto:{email_dest}?subject={urllib.parse.quote(sujet)}&body={urllib.parse.quote(st.session_state['mail_genere'])}"
             st.markdown(f"<a href='{lien}' style='background-color:#0078d4; color:white; padding:15px; border-radius:10px; text-decoration:none; display:block; text-align:center; font-weight:bold;'>📧 OUVRIR OUTLOOK / MAIL</a>", unsafe_allow_html=True)
 
-# --- ONGLET 2 : GUIDE ---
+# --- ONGLET 2 : PHOTOS (GALERIE AVANT/APRÈS) ---
 with tab2:
+    st.subheader("🛠️ Suivi de travaux (Preuves visuelles)")
+    st.info("Prenez vos photos pour constituer un dossier avant/après.")
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("**📷 AVANT INTERVENTION**")
+        img_av = st.camera_input("Photo AVANT", key="cam_av")
+        if img_av:
+            st.download_button(
+                label="⬇️ Télécharger la photo AVANT",
+                data=img_av,
+                file_name=f"AVANT_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
+                mime="image/jpeg"
+            )
+            
+    with c2:
+        st.markdown("**📷 APRÈS INTERVENTION**")
+        img_ap = st.camera_input("Photo APRÈS", key="cam_ap")
+        if img_ap:
+            st.download_button(
+                label="⬇️ Télécharger la photo APRÈS",
+                data=img_ap,
+                file_name=f"APRES_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg",
+                mime="image/jpeg"
+            )
+
+# --- ONGLET 3 : GUIDE ---
+with tab3:
     st.subheader("🔍 Qui paie quoi ?")
     st.markdown("- **Locataire** : Joints, ampoules, propreté, aération (moisissures surface)")
     st.markdown("- **Prestataire** : Chaudière, VMC, ascenseur")
     st.markdown("- **Bailleur (GH)** : Gros œuvre, infiltrations, toiture")
 
-# --- ONGLET 3 : GESTION ---
-with tab3:
+# --- ONGLET 4 : GESTION ---
+with tab4:
     st.subheader("Ajouter un locataire")
-    st.info("Ajoutez les lignes dans le Google Sheet.")
+    st.info("Ajoutez les lignes dans le Google Sheet pour mettre à jour la base.")
     st.dataframe(df)
