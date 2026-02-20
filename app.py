@@ -40,7 +40,7 @@ if "CLE_TEST" not in st.secrets:
     st.stop()
 else:
     genai.configure(api_key=st.secrets["CLE_TEST"])
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    model = genai.GenerativeModel('gemini-pro')
 
 # --- 3. INTERFACE ---
 st.markdown("<h1 style='text-align:center; color:#ff00ff;'>GH EXPERT PRO</h1>", unsafe_allow_html=True)
@@ -99,4 +99,5 @@ with tab3:
     st.subheader("Ajouter un locataire")
     st.info("Utilisez le Google Sheet directement pour ajouter des lignes, l'application se mettra à jour.")
     st.dataframe(df)
+
 
